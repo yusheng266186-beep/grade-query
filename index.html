@@ -1,0 +1,916 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <meta name="color-scheme" content="light">
+  <meta name="robots" content="noindex,nofollow,noarchive">
+  <meta http-equiv="Cache-Control" content="no-store, max-age=0">
+  <title>高二4班 · 零诊成绩报告</title>
+  <style>
+    :root {
+      --ink: #172733;
+      --muted: #718087;
+      --paper: #f4f2ec;
+      --surface: rgba(255, 255, 255, .88);
+      --surface-solid: #fffefa;
+      --line: rgba(27, 55, 66, .11);
+      --navy: #173c4b;
+      --navy-2: #245768;
+      --jade: #2f7168;
+      --jade-soft: #e8f2ee;
+      --gold: #bd8b48;
+      --gold-soft: #f7eddd;
+      --rose: #ad6261;
+      --rose-soft: #f7eae8;
+      --shadow: 0 22px 60px rgba(25, 48, 57, .10);
+      --radius-xl: 30px;
+      --radius-lg: 22px;
+      --radius-md: 16px;
+    }
+
+    * { box-sizing: border-box; }
+    html { scroll-behavior: smooth; }
+    body {
+      margin: 0;
+      min-height: 100vh;
+      color: var(--ink);
+      background: var(--paper);
+      font-family: -apple-system, BlinkMacSystemFont, "PingFang SC", "Microsoft YaHei", "Noto Sans CJK SC", sans-serif;
+      -webkit-font-smoothing: antialiased;
+      font-variant-numeric: tabular-nums;
+    }
+    button, input { font: inherit; }
+    button { -webkit-tap-highlight-color: transparent; }
+    [hidden] { display: none !important; }
+
+    .query-view {
+      position: relative;
+      min-height: 100vh;
+      display: grid;
+      place-items: center;
+      overflow: hidden;
+      padding: 32px 18px;
+      color: #f7f4ea;
+      background:
+        radial-gradient(circle at 12% 18%, rgba(211, 176, 114, .16), transparent 28%),
+        radial-gradient(circle at 86% 80%, rgba(95, 163, 151, .19), transparent 31%),
+        linear-gradient(145deg, #102f3c 0%, #173f4d 48%, #205c5b 100%);
+    }
+    .query-view::before,
+    .query-view::after {
+      content: "";
+      position: absolute;
+      width: 420px;
+      height: 420px;
+      border: 1px solid rgba(255,255,255,.10);
+      border-radius: 50%;
+    }
+    .query-view::before { left: -240px; top: -180px; }
+    .query-view::after { right: -250px; bottom: -220px; }
+
+    .query-shell {
+      position: relative;
+      z-index: 1;
+      width: min(100%, 480px);
+    }
+    .brand-mark {
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      gap: 10px;
+      margin-bottom: 28px;
+      color: rgba(255,255,255,.76);
+      font-size: 12px;
+      letter-spacing: .28em;
+    }
+    .brand-seal {
+      width: 30px;
+      height: 30px;
+      display: grid;
+      place-items: center;
+      border-radius: 10px;
+      background: rgba(255,255,255,.11);
+      border: 1px solid rgba(255,255,255,.15);
+      color: #f5dcae;
+      font-weight: 700;
+      letter-spacing: 0;
+    }
+    .query-heading { text-align: center; margin-bottom: 28px; }
+    .query-kicker {
+      margin: 0 0 11px;
+      color: #e3c48c;
+      font-size: 12px;
+      letter-spacing: .35em;
+    }
+    .query-heading h1 {
+      margin: 0;
+      font-size: clamp(30px, 8vw, 42px);
+      font-weight: 660;
+      letter-spacing: .06em;
+      line-height: 1.18;
+    }
+    .query-heading p {
+      margin: 13px 0 0;
+      color: rgba(244,247,244,.62);
+      font-size: 14px;
+      letter-spacing: .06em;
+    }
+    .query-card {
+      padding: 28px;
+      border-radius: 28px;
+      background: rgba(255,255,255,.94);
+      border: 1px solid rgba(255,255,255,.50);
+      box-shadow: 0 32px 90px rgba(4, 23, 31, .28);
+      color: var(--ink);
+      backdrop-filter: blur(18px);
+    }
+    .field + .field { margin-top: 18px; }
+    .field label {
+      display: flex;
+      justify-content: space-between;
+      margin: 0 0 8px;
+      color: #52646c;
+      font-size: 13px;
+      font-weight: 650;
+    }
+    .field label span { color: #9aa5a7; font-weight: 400; font-size: 11px; }
+    .field input {
+      width: 100%;
+      height: 54px;
+      padding: 0 16px;
+      border: 1px solid #dde4e2;
+      border-radius: 15px;
+      outline: none;
+      color: var(--ink);
+      background: #f8faf8;
+      transition: .2s ease;
+    }
+    .field input:focus {
+      border-color: #5c928a;
+      background: white;
+      box-shadow: 0 0 0 4px rgba(47, 113, 104, .10);
+    }
+    .field input::placeholder { color: #afb7b7; }
+    .primary-btn {
+      width: 100%;
+      height: 54px;
+      margin-top: 22px;
+      border: 0;
+      border-radius: 15px;
+      color: white;
+      background: linear-gradient(135deg, #173c4b, #2e6e68);
+      box-shadow: 0 14px 30px rgba(28, 79, 82, .22);
+      font-weight: 650;
+      letter-spacing: .16em;
+      cursor: pointer;
+      transition: transform .2s ease, box-shadow .2s ease;
+    }
+    .primary-btn:hover { transform: translateY(-1px); box-shadow: 0 18px 34px rgba(28, 79, 82, .28); }
+    .primary-btn:active { transform: translateY(0); }
+    .primary-btn:disabled { opacity: .72; cursor: wait; transform: none; }
+    .error {
+      min-height: 20px;
+      margin-top: 12px;
+      color: #a55353;
+      text-align: center;
+      font-size: 12px;
+    }
+    .query-note {
+      margin: 18px 0 0;
+      color: rgba(255,255,255,.48);
+      text-align: center;
+      font-size: 11px;
+      letter-spacing: .10em;
+    }
+
+    .report-view { min-height: 100vh; padding: 22px 18px 56px; }
+    .report-shell { width: min(100%, 1120px); margin: 0 auto; }
+    .report-nav {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      min-height: 48px;
+      margin-bottom: 18px;
+    }
+    .report-brand { display: flex; align-items: center; gap: 10px; color: var(--navy); font-weight: 700; }
+    .report-brand .brand-seal { color: white; background: var(--navy); border: 0; }
+    .ghost-btn {
+      min-height: 40px;
+      padding: 0 16px;
+      border-radius: 999px;
+      border: 1px solid var(--line);
+      background: rgba(255,255,255,.72);
+      color: #4d6068;
+      cursor: pointer;
+    }
+    .hero {
+      position: relative;
+      overflow: hidden;
+      display: grid;
+      grid-template-columns: minmax(260px, 1.05fr) minmax(360px, 1.35fr);
+      gap: 28px;
+      padding: clamp(26px, 4.5vw, 48px);
+      border-radius: var(--radius-xl);
+      color: white;
+      background:
+        radial-gradient(circle at 92% 8%, rgba(222, 190, 130, .18), transparent 34%),
+        linear-gradient(135deg, #153946 0%, #1e5260 60%, #2d6b63 100%);
+      box-shadow: var(--shadow);
+    }
+    .hero::after {
+      content: "";
+      position: absolute;
+      width: 360px;
+      height: 360px;
+      right: -220px;
+      bottom: -250px;
+      border-radius: 50%;
+      border: 1px solid rgba(255,255,255,.16);
+    }
+    .student-meta { position: relative; z-index: 1; }
+    .eyebrow { margin: 0 0 12px; color: rgba(255,255,255,.60); font-size: 11px; letter-spacing: .24em; }
+    .student-name { margin: 0; font-size: clamp(30px, 5vw, 44px); font-weight: 680; letter-spacing: .08em; }
+    .class-tag {
+      display: inline-flex;
+      margin-top: 12px;
+      padding: 6px 11px;
+      border-radius: 999px;
+      color: #e9d6ad;
+      background: rgba(255,255,255,.09);
+      border: 1px solid rgba(255,255,255,.12);
+      font-size: 11px;
+    }
+    .score-line { display: flex; align-items: flex-end; gap: 12px; margin-top: 30px; }
+    .score-number { font-size: clamp(58px, 10vw, 88px); font-weight: 740; letter-spacing: -.05em; line-height: .86; }
+    .score-unit { padding-bottom: 8px; color: rgba(255,255,255,.58); font-size: 13px; }
+    .status-badge {
+      display: inline-flex;
+      align-items: center;
+      gap: 8px;
+      margin-top: 20px;
+      padding: 8px 12px;
+      border-radius: 999px;
+      background: rgba(255,255,255,.11);
+      border: 1px solid rgba(255,255,255,.14);
+      font-size: 13px;
+    }
+    .status-dot { width: 8px; height: 8px; border-radius: 50%; background: #8fd0b4; box-shadow: 0 0 0 5px rgba(143,208,180,.11); }
+    .hero-data { position: relative; z-index: 1; display: grid; align-content: center; gap: 12px; }
+    .rank-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 12px; }
+    .rank-card, .cutoff-card {
+      padding: 18px;
+      border-radius: 18px;
+      background: rgba(255,255,255,.09);
+      border: 1px solid rgba(255,255,255,.12);
+    }
+    .rank-card span, .cutoff-card span { display: block; color: rgba(255,255,255,.55); font-size: 10px; letter-spacing: .10em; }
+    .rank-card strong { display: block; margin-top: 7px; font-size: clamp(20px, 3vw, 30px); font-weight: 680; }
+    .rank-card small { color: rgba(255,255,255,.46); font-size: 10px; }
+    .cutoff-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
+    .cutoff-card strong { display: block; margin-top: 7px; font-size: 20px; }
+    .cutoff-card small { display: block; margin-top: 4px; color: rgba(255,255,255,.48); font-size: 10px; }
+
+    .section-grid { display: grid; grid-template-columns: 1.12fr .88fr; gap: 18px; margin-top: 18px; }
+    .panel {
+      padding: clamp(20px, 3vw, 28px);
+      border-radius: var(--radius-lg);
+      background: var(--surface);
+      border: 1px solid rgba(255,255,255,.75);
+      box-shadow: 0 12px 40px rgba(25, 48, 57, .055);
+      backdrop-filter: blur(10px);
+    }
+    .panel-head { display: flex; align-items: flex-start; justify-content: space-between; gap: 18px; margin-bottom: 20px; }
+    .panel-title { margin: 0; font-size: 18px; font-weight: 700; letter-spacing: .04em; }
+    .panel-subtitle { margin: 6px 0 0; color: var(--muted); font-size: 12px; line-height: 1.6; }
+    .tiny-legend { color: #899496; font-size: 10px; white-space: nowrap; }
+
+    .subjects { display: grid; gap: 10px; }
+    .subject-row {
+      padding: 16px;
+      border-radius: 17px;
+      background: #fbfbf8;
+      border: 1px solid #edf0ec;
+    }
+    .subject-top { display: grid; grid-template-columns: 52px 64px 1fr auto; align-items: center; gap: 12px; }
+    .subject-name { color: #41545c; font-size: 13px; font-weight: 700; }
+    .subject-score { font-size: 25px; font-weight: 750; letter-spacing: -.03em; }
+    .subject-score small { margin-left: 2px; color: #9aa4a4; font-size: 10px; font-weight: 400; }
+    .subject-rank { color: #738186; font-size: 11px; }
+    .state-pill { padding: 6px 9px; border-radius: 999px; font-size: 10px; font-weight: 700; white-space: nowrap; }
+    .state-control { color: #245f50; background: var(--jade-soft); }
+    .state-bachelor { color: #745622; background: var(--gold-soft); }
+    .state-close { color: #875858; background: var(--rose-soft); }
+    .state-below { color: #7a6d69; background: #eeeae6; }
+    .meter { position: relative; height: 7px; margin: 14px 0 8px; border-radius: 999px; background: #e9ece8; overflow: visible; }
+    .meter-fill { display: block; height: 100%; border-radius: inherit; background: linear-gradient(90deg, #9ebcb5, #36756c); }
+    .meter-mark { position: absolute; top: -3px; width: 2px; height: 13px; border-radius: 2px; }
+    .meter-mark.bachelor { background: #cda25d; }
+    .meter-mark.control { background: #235d54; }
+    .subject-foot { display: flex; justify-content: space-between; gap: 10px; color: #879294; font-size: 10px; }
+    .subject-diffs { display: flex; gap: 10px; flex-wrap: wrap; }
+    .diff-positive { color: #2f7168; }
+    .diff-negative { color: #9a6762; }
+
+    .insights { display: grid; gap: 12px; }
+    .insight {
+      position: relative;
+      padding: 18px 18px 18px 50px;
+      border-radius: 18px;
+      background: #fbfbf8;
+      border: 1px solid #edf0ec;
+    }
+    .insight-index {
+      position: absolute;
+      left: 17px;
+      top: 17px;
+      width: 22px;
+      height: 22px;
+      display: grid;
+      place-items: center;
+      border-radius: 8px;
+      color: white;
+      background: var(--navy-2);
+      font-size: 10px;
+    }
+    .insight h4 { margin: 0; color: #30464f; font-size: 13px; }
+    .insight p { margin: 6px 0 0; color: #738084; font-size: 12px; line-height: 1.65; }
+
+    .trend-panel { margin-top: 18px; }
+    .trend-tabs { display: flex; gap: 7px; flex-wrap: wrap; }
+    .trend-tab {
+      min-height: 32px;
+      padding: 0 12px;
+      border: 1px solid #e2e8e5;
+      border-radius: 999px;
+      color: #66777d;
+      background: #fafbf9;
+      font-size: 11px;
+      cursor: pointer;
+    }
+    .trend-tab.active { color: white; background: var(--navy); border-color: var(--navy); }
+    .chart-wrap { position: relative; height: 260px; margin-top: 18px; }
+    .chart-wrap canvas { display: block; width: 100%; height: 100%; }
+    .chart-empty {
+      position: absolute;
+      inset: 0;
+      display: grid;
+      place-items: center;
+      border-radius: 18px;
+      color: #879294;
+      background: #f8f9f6;
+      font-size: 12px;
+    }
+    .exam-strip { display: grid; grid-template-columns: repeat(6, 1fr); gap: 8px; margin-top: 8px; }
+    .exam-card { padding: 10px 8px; border-radius: 13px; background: #f8f9f6; text-align: center; }
+    .exam-card strong { display: block; color: #334952; font-size: 12px; }
+    .exam-card span { display: block; margin-top: 4px; color: #8b9697; font-size: 9px; line-height: 1.35; }
+
+    .rank-timeline { display: grid; grid-template-columns: repeat(6, 1fr); gap: 9px; margin-top: 16px; }
+    .rank-stop { min-height: 116px; padding: 13px; border-radius: 16px; background: #fafaf7; border: 1px solid #edf0ec; }
+    .scope-tag { display: inline-flex; padding: 4px 7px; border-radius: 999px; font-size: 9px; }
+    .scope-city { color: #2b5d70; background: #e7f0f3; }
+    .scope-school { color: #4e685f; background: #e9f0ec; }
+    .rank-stop strong { display: block; margin-top: 13px; font-size: 19px; }
+    .rank-stop p { margin: 5px 0 0; color: #849092; font-size: 10px; line-height: 1.45; }
+    .zero-ranks { margin-top: 8px; color: #587079; font-size: 9px; line-height: 1.6; }
+
+    .detail-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 18px; margin-top: 18px; }
+    details.panel { padding: 0; overflow: hidden; }
+    details.panel summary {
+      list-style: none;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 18px;
+      padding: 22px 24px;
+      cursor: pointer;
+    }
+    details.panel summary::-webkit-details-marker { display: none; }
+    .summary-sign { width: 30px; height: 30px; display: grid; place-items: center; border-radius: 50%; background: #edf2ef; color: #526b63; transition: transform .2s ease; }
+    details[open] .summary-sign { transform: rotate(45deg); }
+    .detail-body { padding: 0 24px 24px; }
+    .knowledge-list { display: grid; gap: 10px; }
+    .knowledge-item { display: grid; grid-template-columns: 44px 1fr auto; gap: 10px; align-items: center; padding: 13px; border-radius: 14px; background: #fafaf7; }
+    .knowledge-item b { font-size: 12px; }
+    .knowledge-item span { color: #68787d; font-size: 11px; }
+    .knowledge-item small { color: #9b6a62; font-size: 10px; }
+
+    .class-context { display: grid; grid-template-columns: repeat(4, 1fr); gap: 10px; }
+    .context-stat { padding: 16px; border-radius: 16px; background: #fafaf7; text-align: center; }
+    .context-stat strong { display: block; font-size: 22px; }
+    .context-stat span { display: block; margin-top: 5px; color: #849092; font-size: 10px; }
+    .source-note { margin: 18px 0 0; color: #929b9a; text-align: center; font-size: 10px; line-height: 1.7; }
+
+    .fade-in { animation: fadeIn .45s ease both; }
+    @keyframes fadeIn { from { opacity: 0; transform: translateY(10px); } to { opacity: 1; transform: translateY(0); } }
+
+    @media (max-width: 860px) {
+      .hero, .section-grid, .detail-grid { grid-template-columns: 1fr; }
+      .rank-timeline { grid-template-columns: repeat(3, 1fr); }
+      .exam-strip { grid-template-columns: repeat(3, 1fr); }
+    }
+    @media (max-width: 560px) {
+      .report-view { padding: 12px 10px 38px; }
+      .report-nav { padding: 0 6px; }
+      .hero { padding: 26px 20px; border-radius: 24px; }
+      .score-number { font-size: 68px; }
+      .rank-grid { grid-template-columns: 1fr 1fr 1fr; gap: 7px; }
+      .rank-card { padding: 13px 9px; }
+      .rank-card strong { font-size: 20px; }
+      .cutoff-card { padding: 14px; }
+      .panel { padding: 20px 16px; }
+      .subject-top { grid-template-columns: 43px 58px 1fr; gap: 8px; }
+      .subject-rank { text-align: right; }
+      .state-pill { grid-column: 1 / -1; justify-self: start; }
+      .rank-timeline { grid-template-columns: 1fr 1fr; }
+      .class-context { grid-template-columns: 1fr 1fr; }
+      .panel-head { flex-direction: column; gap: 8px; }
+      .chart-wrap { height: 230px; }
+      .query-card { padding: 24px 20px; }
+    }
+  </style>
+</head>
+<body>
+  <main>
+    <section class="query-view" id="queryView">
+      <div class="query-shell fade-in">
+        <div class="brand-mark"><span class="brand-seal">荣</span><span>荣县一中 · 高2024级</span></div>
+        <header class="query-heading">
+          <p class="query-kicker">阶段成长记录</p>
+          <h1>零诊成绩报告</h1>
+          <p>看清当下，也看见这一路的变化</p>
+        </header>
+        <form class="query-card" id="queryForm" novalidate>
+          <div class="field">
+            <label for="nameInput">学生姓名 <span>必填</span></label>
+            <input id="nameInput" name="name" autocomplete="off" maxlength="20" placeholder="请输入学生姓名">
+          </div>
+          <div class="field">
+            <label for="idInput">身份证号码 <span>必填</span></label>
+            <input id="idInput" name="id" autocomplete="off" maxlength="18" placeholder="请输入完整身份证号码">
+          </div>
+          <button class="primary-btn" id="queryButton" type="button">查看成绩报告</button>
+          <div class="error" id="errorText" role="alert" aria-live="polite"></div>
+        </form>
+        <p class="query-note">数据加密存储 · 成绩仅供学生本人及家长查阅</p>
+      </div>
+    </section>
+
+    <section class="report-view" id="reportView" hidden>
+      <div class="report-shell" id="reportShell"></div>
+    </section>
+  </main>
+
+  <script>
+    "use strict";
+    const STUDENTS = [];
+    const CLASS_SUMMARY = {"className":"高二4班","students":48,"average":366.885416666667,"controlCount":1,"bachelorCount":23,"bachelorChange":11};
+    const BUILD_META = {"studentCount":48,"sourceFiles":["身份信息.xlsx","班级划线.xlsx","班级上线人数对比.xlsx","物理类4班全部科目小题得分_含知识点.xlsx","年级成绩.xlsx","多次考试分析.xlsx"],"generatedAt":"2026-07-16T12:45:11.778Z"};
+
+    const SUBJECTS = [
+      { key: "chinese", name: "语文", max: 150 },
+      { key: "math", name: "数学", max: 150 },
+      { key: "english", name: "英语", max: 150 },
+      { key: "physics", name: "物理", max: 100 },
+      { key: "chemistry", name: "化学", max: 100 },
+      { key: "biology", name: "生物", max: 100 },
+    ];
+    const EXAM_SHORT = {
+      "高一下期末": "高一下期末",
+      "高二上期末": "高二上期末",
+      "高二下第一次月考": "第一次月考",
+      "高二下半期考试": "半期考试",
+      "高二下第二次月考": "第二次月考",
+      "高二下零诊": "零诊",
+    };
+
+    const queryView = document.getElementById("queryView");
+    const reportView = document.getElementById("reportView");
+    const reportShell = document.getElementById("reportShell");
+    const queryForm = document.getElementById("queryForm");
+    const nameInput = document.getElementById("nameInput");
+    const idInput = document.getElementById("idInput");
+    const errorText = document.getElementById("errorText");
+    const queryButton = document.getElementById("queryButton");
+
+    const escapeHtml = (value) => String(value ?? "")
+      .replace(/&/g, "&amp;")
+      .replace(/</g, "&lt;")
+      .replace(/>/g, "&gt;")
+      .replace(/\"/g, "&quot;")
+      .replace(/'/g, "&#039;");
+    const number = (value) => Number.isFinite(Number(value)) ? Number(value) : null;
+    const fmt = (value, digits = 1) => number(value) == null ? "—" : Number(value).toFixed(digits).replace(/\.0$/, "");
+    const signed = (value) => {
+      const n = number(value);
+      return n == null ? "—" : `${n >= 0 ? "+" : ""}${n.toFixed(1)}`;
+    };
+    const statusFor = (controlDiff, bachelorDiff) => {
+      const control = number(controlDiff);
+      const bachelor = number(bachelorDiff);
+      if (control != null && control >= 0) return { label: "特控线上", cls: "state-control" };
+      if (bachelor != null && bachelor >= 0) return { label: "本科线上", cls: "state-bachelor" };
+      if (bachelor != null && bachelor >= -10) return { label: "本科临界", cls: "state-close" };
+      return { label: "本科线下", cls: "state-below" };
+    };
+    const diffClass = (value) => number(value) >= 0 ? "diff-positive" : "diff-negative";
+
+    const textEncoder = new TextEncoder();
+    const bytesToHex = (bytes) => Array.from(bytes, (byte) => byte.toString(16).padStart(2, "0")).join("");
+    const base64ToBytes = (value) => Uint8Array.from(atob(value), (char) => char.charCodeAt(0));
+
+    async function sha256Hex(value) {
+      const digest = await crypto.subtle.digest("SHA-256", textEncoder.encode(value));
+      return bytesToHex(new Uint8Array(digest));
+    }
+
+    async function loadStudent(name, id) {
+      const secret = `${name.trim()}|${id.replace(/\s+/g, "").trim().toUpperCase()}`;
+      const fileId = await sha256Hex(`grade-query-v1|${secret}`);
+      const response = await fetch(`data/${fileId}.json`, { cache: "no-store" });
+      if (!response.ok) return null;
+      const encrypted = await response.json();
+      const material = await crypto.subtle.importKey(
+        "raw",
+        textEncoder.encode(secret),
+        "PBKDF2",
+        false,
+        ["deriveKey"],
+      );
+      const key = await crypto.subtle.deriveKey(
+        { name: "PBKDF2", salt: base64ToBytes(encrypted.salt), iterations: 240000, hash: "SHA-256" },
+        material,
+        { name: "AES-GCM", length: 256 },
+        false,
+        ["decrypt"],
+      );
+      const plaintext = await crypto.subtle.decrypt(
+        { name: "AES-GCM", iv: base64ToBytes(encrypted.iv) },
+        key,
+        base64ToBytes(encrypted.data),
+      );
+      return JSON.parse(new TextDecoder().decode(plaintext));
+    }
+
+    async function handleQuery(event) {
+      if (event) event.preventDefault();
+      const name = nameInput.value.trim();
+      const id = idInput.value.replace(/\s+/g, "").trim().toUpperCase();
+      errorText.textContent = "";
+      if (!name || !id) {
+        errorText.textContent = "请同时填写学生姓名和完整身份证号码";
+        (!name ? nameInput : idInput).focus();
+        return;
+      }
+      if (!window.crypto || !window.crypto.subtle) {
+        errorText.textContent = "当前浏览器版本过旧，请使用微信、Chrome、Edge或Safari打开。";
+        return;
+      }
+      queryButton.disabled = true;
+      queryButton.textContent = "正在安全读取…";
+      try {
+        const student = await loadStudent(name, id);
+        if (!student) {
+          errorText.textContent = "姓名或身份证号码不匹配，请重新核对";
+          return;
+        }
+        if (!student.current) {
+          errorText.textContent = "该学生暂未匹配到零诊成绩";
+          return;
+        }
+        renderReport(student);
+      } catch (error) {
+        console.error(error);
+        queryView.hidden = false;
+        reportView.hidden = true;
+        errorText.textContent = "查询失败，请检查网络后重试，或确认姓名和身份证号码。";
+      } finally {
+        queryButton.disabled = false;
+        queryButton.textContent = "查看成绩报告";
+      }
+    }
+
+    queryForm.addEventListener("submit", handleQuery);
+    queryButton.addEventListener("click", handleQuery);
+
+    function subjectRows(student) {
+      return SUBJECTS.map((subject) => {
+        const item = student.current.subjects[subject.key];
+        const status = statusFor(item.controlDiff, item.bachelorDiff);
+        const controlLine = item.score != null && item.controlDiff != null ? item.score - item.controlDiff : null;
+        const bachelorLine = item.score != null && item.bachelorDiff != null ? item.score - item.bachelorDiff : null;
+        const scorePct = Math.max(0, Math.min(100, (item.score / subject.max) * 100));
+        const controlPct = Math.max(0, Math.min(100, (controlLine / subject.max) * 100));
+        const bachelorPct = Math.max(0, Math.min(100, (bachelorLine / subject.max) * 100));
+        return `
+          <article class="subject-row">
+            <div class="subject-top">
+              <span class="subject-name">${subject.name}</span>
+              <strong class="subject-score">${fmt(item.score)}<small>分</small></strong>
+              <span class="subject-rank">市排名 ${fmt(item.rank, 0)}</span>
+              <span class="state-pill ${status.cls}">${status.label}</span>
+            </div>
+            <div class="meter" aria-hidden="true">
+              <i class="meter-fill" style="width:${scorePct}%"></i>
+              <b class="meter-mark bachelor" style="left:${bachelorPct}%"></b>
+              <b class="meter-mark control" style="left:${controlPct}%"></b>
+            </div>
+            <div class="subject-foot">
+              <span>本科线 ${fmt(bachelorLine)}</span>
+              <span class="subject-diffs">
+                <b class="${diffClass(item.bachelorDiff)}">本科 ${signed(item.bachelorDiff)}</b>
+                <b class="${diffClass(item.controlDiff)}">特控 ${signed(item.controlDiff)}</b>
+              </span>
+              <span>特控线 ${fmt(controlLine)}</span>
+            </div>
+          </article>`;
+      }).join("");
+    }
+
+    function createInsights(student) {
+      const pairs = SUBJECTS.map((subject) => ({ ...subject, ...student.current.subjects[subject.key] }));
+      const strongest = [...pairs].sort((a, b) => (b.controlDiff ?? -999) - (a.controlDiff ?? -999)).slice(0, 2);
+      const belowControl = pairs.filter((item) => item.controlDiff < 0).sort((a, b) => Math.abs(a.controlDiff) - Math.abs(b.controlDiff));
+      const belowBachelor = pairs.filter((item) => item.bachelorDiff < 0).sort((a, b) => Math.abs(a.bachelorDiff) - Math.abs(b.bachelorDiff));
+      const focus = belowControl[0] ?? belowBachelor[0] ?? strongest[0];
+      const exams = student.exams.filter((exam) => number(exam.total) != null);
+      const latest = exams[exams.length - 1];
+      const previous = exams[exams.length - 2];
+      const lastCity = [...exams].reverse().find((exam) => exam.scope === "city" && exam.name !== latest?.name);
+      const scoreChange = latest && previous ? latest.total - previous.total : null;
+      const cityRankChange = latest && lastCity && latest.rank && lastCity.rank ? lastCity.rank - latest.rank : null;
+      const cityRankText = cityRankChange == null
+        ? ""
+        : cityRankChange > 0
+          ? `；较上次市级统考前进${cityRankChange}名。`
+          : cityRankChange < 0
+            ? `；较上次市级统考后移${Math.abs(cityRankChange)}名。`
+            : "；与上次市级统考排名持平。";
+      const focusText = focus.controlDiff < 0 && focus.bachelorDiff >= 0
+        ? `${focus.name}已达本科有效分，距离特控有效分${Math.abs(focus.controlDiff).toFixed(1)}分。`
+        : focus.bachelorDiff < 0
+          ? `${focus.name}距离本科有效分${Math.abs(focus.bachelorDiff).toFixed(1)}分，是当前较接近的突破点。`
+          : `${focus.name}目前处于较稳定的上线区间。`;
+      return [
+        { title: "优势表现", text: `${strongest.map((item) => item.name).join("、")}是本次相对表现更突出的学科。` },
+        { title: "关注方向", text: focusText },
+        { title: "阶段变化", text: scoreChange == null ? "目前只收录到零诊成绩，暂无足够的历次数据生成趋势结论。" : `零诊总分较上一次考试${scoreChange >= 0 ? "上升" : "下降"}${Math.abs(scoreChange).toFixed(1)}分${cityRankText || "。"}` },
+      ];
+    }
+
+    function rankTimeline(student) {
+      return student.exams.map((exam) => {
+        const isCity = exam.scope === "city";
+        const zeroExtra = exam.name.includes("零诊")
+          ? `<div class="zero-ranks">校内第 ${fmt(student.current.schoolRank, 0)} 名<br>班级第 ${fmt(student.current.classRank, 0)} 名</div>`
+          : "";
+        return `
+          <div class="rank-stop">
+            <span class="scope-tag ${isCity ? "scope-city" : "scope-school"}">${isCity ? "市排名" : "校排名"}</span>
+            <strong>第 ${fmt(exam.rank, 0)} 名</strong>
+            <p>${escapeHtml(EXAM_SHORT[exam.name] || exam.name)}</p>
+            ${zeroExtra}
+          </div>`;
+      }).join("");
+    }
+
+    function knowledgeContent(student) {
+      const items = [];
+      for (const subject of SUBJECTS) {
+        const detail = student.knowledge[subject.key];
+        if (!detail?.weak?.length) continue;
+        for (const point of detail.weak.slice(0, 2)) {
+          items.push(`
+            <div class="knowledge-item">
+              <b>${subject.name}</b>
+              <span>${escapeHtml(point.knowledge)} · ${escapeHtml(point.question)}</span>
+              <small>失 ${fmt(point.loss)} 分</small>
+            </div>`);
+        }
+      }
+      return items.length ? items.join("") : `<p class="panel-subtitle">暂未匹配到小题知识点数据。</p>`;
+    }
+
+    function classContext() {
+      if (!CLASS_SUMMARY) return `<p class="panel-subtitle">暂未匹配到班级汇总数据。</p>`;
+      return `
+        <div class="class-context">
+          <div class="context-stat"><strong>${fmt(CLASS_SUMMARY.students, 0)}</strong><span>班级参考人数</span></div>
+          <div class="context-stat"><strong>${fmt(CLASS_SUMMARY.average)}</strong><span>零诊班级平均分</span></div>
+          <div class="context-stat"><strong>${fmt(CLASS_SUMMARY.controlCount, 0)}</strong><span>特控上线人数</span></div>
+          <div class="context-stat"><strong>${fmt(CLASS_SUMMARY.bachelorCount, 0)}</strong><span>本科上线人数</span></div>
+        </div>`;
+    }
+
+    function renderReport(student) {
+      const current = student.current;
+      const overall = statusFor(current.controlDiff, current.bachelorDiff);
+      const insights = createInsights(student);
+      const trendButtons = [{ key: "total", name: "总分" }, ...SUBJECTS].map((subject, index) =>
+        `<button class="trend-tab ${index === 0 ? "active" : ""}" type="button" data-trend="${subject.key}">${subject.name}</button>`
+      ).join("");
+      const examCards = student.exams.map((exam) => `
+        <div class="exam-card"><strong>${fmt(exam.total)}</strong><span>${escapeHtml(EXAM_SHORT[exam.name] || exam.name)}</span></div>`
+      ).join("") || `<div class="exam-card"><strong>—</strong><span>暂无记录</span></div>`;
+      const rankingHtml = rankTimeline(student) || `<p class="panel-subtitle">暂无可展示的历次排名记录。</p>`;
+
+      reportShell.innerHTML = `
+        <nav class="report-nav">
+          <div class="report-brand"><span class="brand-seal">荣</span><span>零诊成绩报告</span></div>
+          <button class="ghost-btn" type="button" id="backButton">返回查询</button>
+        </nav>
+
+        <header class="hero fade-in">
+          <div class="student-meta">
+            <p class="eyebrow">高二下零诊 · 个人成绩概览</p>
+            <h1 class="student-name">${escapeHtml(student.name)}</h1>
+            <span class="class-tag">${escapeHtml(student.className)}</span>
+            <div class="score-line"><strong class="score-number">${fmt(current.totalScore)}</strong><span class="score-unit">总分</span></div>
+            <div class="status-badge"><i class="status-dot"></i>${overall.label}</div>
+          </div>
+          <div class="hero-data">
+            <div class="rank-grid">
+              <div class="rank-card"><span>全市排名</span><strong>${fmt(current.cityRank, 0)}</strong><small>市级参考范围</small></div>
+              <div class="rank-card"><span>校内排名</span><strong>${fmt(current.schoolRank, 0)}</strong><small>年级成绩排名</small></div>
+              <div class="rank-card"><span>班级排名</span><strong>${fmt(current.classRank, 0)}</strong><small>本班参考范围</small></div>
+            </div>
+            <div class="cutoff-grid">
+              <div class="cutoff-card"><span>特控线差</span><strong>${signed(current.controlDiff)} 分</strong><small>特控线 ${fmt(current.controlLine)} 分</small></div>
+              <div class="cutoff-card"><span>本科线差</span><strong>${signed(current.bachelorDiff)} 分</strong><small>本科线 ${fmt(current.bachelorLine)} 分</small></div>
+            </div>
+          </div>
+        </header>
+
+        <div class="section-grid">
+          <section class="panel fade-in">
+            <div class="panel-head">
+              <div><h2 class="panel-title">各科上线情况</h2><p class="panel-subtitle">成绩点与本科、特控有效分放在同一条刻度上</p></div>
+              <span class="tiny-legend">金色：本科线 · 绿色：特控线</span>
+            </div>
+            <div class="subjects">${subjectRows(student)}</div>
+          </section>
+          <section class="panel fade-in">
+            <div class="panel-head"><div><h2 class="panel-title">本次观察</h2><p class="panel-subtitle">从成绩中提取三条最值得关注的信息</p></div></div>
+            <div class="insights">${insights.map((item, index) => `<article class="insight"><span class="insight-index">0${index + 1}</span><h4>${item.title}</h4><p>${item.text}</p></article>`).join("")}</div>
+          </section>
+        </div>
+
+        <section class="panel trend-panel fade-in">
+          <div class="panel-head">
+            <div><h2 class="panel-title">阶段成绩变化</h2><p class="panel-subtitle">选择科目查看六次考试的分数走势</p></div>
+            <div class="trend-tabs">${trendButtons}</div>
+          </div>
+          <div class="chart-wrap"><canvas id="trendCanvas" aria-label="历次成绩折线图"></canvas><div class="chart-empty" id="chartEmpty" hidden>历次数据不足，暂不绘制趋势线</div></div>
+          <div class="exam-strip">${examCards}</div>
+        </section>
+
+        <section class="panel trend-panel fade-in">
+          <div class="panel-head"><div><h2 class="panel-title">历次排名记录</h2><p class="panel-subtitle">期末与零诊为全市排名，其余考试为校内排名，两种范围不直接比较</p></div></div>
+          <div class="rank-timeline">${rankingHtml}</div>
+        </section>
+
+        <div class="detail-grid">
+          <details class="panel fade-in">
+            <summary><div><h2 class="panel-title">小题与知识点</h2><p class="panel-subtitle">展开查看本次主要失分知识点</p></div><span class="summary-sign">＋</span></summary>
+            <div class="detail-body"><div class="knowledge-list">${knowledgeContent(student)}</div></div>
+          </details>
+          <details class="panel fade-in">
+            <summary><div><h2 class="panel-title">班级参考</h2><p class="panel-subtitle">只提供整体数据，辅助理解本次考试</p></div><span class="summary-sign">＋</span></summary>
+            <div class="detail-body">${classContext()}</div>
+          </details>
+        </div>
+
+        <p class="source-note">数据来自文件夹内6份原始 Excel：身份信息、班级划线、班级上线人数对比、年级成绩、多次考试分析及小题知识点数据。<br>排名范围不同，请结合“市排名 / 校排名 / 班级排名”标签阅读。</p>`;
+
+      queryView.hidden = true;
+      reportView.hidden = false;
+      window.scrollTo(0, 0);
+      document.getElementById("backButton").addEventListener("click", resetQuery);
+      reportShell.querySelectorAll("[data-trend]").forEach((button) => {
+        button.addEventListener("click", () => {
+          reportShell.querySelectorAll("[data-trend]").forEach((item) => item.classList.remove("active"));
+          button.classList.add("active");
+          drawTrend(student, button.dataset.trend);
+        });
+      });
+      requestAnimationFrame(() => {
+        try { drawTrend(student, "total"); }
+        catch (error) { console.error(error); }
+      });
+      if (window.ResizeObserver) {
+        const chart = document.getElementById("trendCanvas");
+        const observer = new ResizeObserver(() => {
+          const active = reportShell.querySelector("[data-trend].active");
+          if (active && document.body.contains(chart)) {
+            try { drawTrend(student, active.dataset.trend); }
+            catch (error) { console.error(error); }
+          }
+        });
+        observer.observe(chart.parentElement);
+      }
+    }
+
+    function resetQuery() {
+      reportView.hidden = true;
+      queryView.hidden = false;
+      reportShell.innerHTML = "";
+      nameInput.value = "";
+      idInput.value = "";
+      errorText.textContent = "";
+      window.scrollTo(0, 0);
+      nameInput.focus();
+    }
+
+    function drawTrend(student, key) {
+      const canvas = document.getElementById("trendCanvas");
+      const empty = document.getElementById("chartEmpty");
+      if (!canvas) return;
+      const entries = student.exams
+        .map((exam) => ({ label: EXAM_SHORT[exam.name] || exam.name, value: number(exam.scores[key]) }))
+        .filter((entry) => entry.value != null);
+      const rect = canvas.getBoundingClientRect();
+      const width = Math.max(320, rect.width || 800);
+      const height = Math.max(220, rect.height || 260);
+      const ratio = Math.min(2, window.devicePixelRatio || 1);
+      canvas.width = width * ratio;
+      canvas.height = height * ratio;
+      const ctx = canvas.getContext("2d");
+      ctx.scale(ratio, ratio);
+      ctx.clearRect(0, 0, width, height);
+      if (entries.length < 2) {
+        canvas.style.visibility = "hidden";
+        if (empty) empty.hidden = false;
+        return;
+      }
+      canvas.style.visibility = "visible";
+      if (empty) empty.hidden = true;
+
+      const values = entries.map((entry) => entry.value);
+      const rawMin = Math.min(...values);
+      const rawMax = Math.max(...values);
+      const range = Math.max(10, rawMax - rawMin);
+      const min = Math.max(0, rawMin - range * .22);
+      const max = rawMax + range * .22;
+      const pad = { left: 42, right: 24, top: 26, bottom: 36 };
+      const plotW = width - pad.left - pad.right;
+      const plotH = height - pad.top - pad.bottom;
+      const x = (index) => pad.left + (plotW * index) / Math.max(1, entries.length - 1);
+      const y = (value) => pad.top + ((max - value) / (max - min)) * plotH;
+
+      ctx.lineWidth = 1;
+      ctx.strokeStyle = "rgba(31, 69, 78, .10)";
+      ctx.fillStyle = "#879293";
+      ctx.font = "10px -apple-system, BlinkMacSystemFont, 'Microsoft YaHei', sans-serif";
+      ctx.textAlign = "right";
+      for (let i = 0; i < 4; i += 1) {
+        const py = pad.top + (plotH * i) / 3;
+        const label = max - ((max - min) * i) / 3;
+        ctx.beginPath();
+        ctx.moveTo(pad.left, py);
+        ctx.lineTo(width - pad.right, py);
+        ctx.stroke();
+        ctx.fillText(label.toFixed(0), pad.left - 8, py + 3);
+      }
+
+      const gradient = ctx.createLinearGradient(0, pad.top, 0, height - pad.bottom);
+      gradient.addColorStop(0, "rgba(47, 113, 104, .22)");
+      gradient.addColorStop(1, "rgba(47, 113, 104, 0)");
+      ctx.beginPath();
+      ctx.moveTo(x(0), height - pad.bottom);
+      entries.forEach((entry, index) => ctx.lineTo(x(index), y(entry.value)));
+      ctx.lineTo(x(entries.length - 1), height - pad.bottom);
+      ctx.closePath();
+      ctx.fillStyle = gradient;
+      ctx.fill();
+
+      ctx.beginPath();
+      entries.forEach((entry, index) => {
+        if (index === 0) ctx.moveTo(x(index), y(entry.value));
+        else ctx.lineTo(x(index), y(entry.value));
+      });
+      ctx.strokeStyle = "#2f7168";
+      ctx.lineWidth = 3;
+      ctx.lineJoin = "round";
+      ctx.lineCap = "round";
+      ctx.stroke();
+
+      entries.forEach((entry, index) => {
+        const px = x(index);
+        const py = y(entry.value);
+        ctx.beginPath();
+        ctx.arc(px, py, 5, 0, Math.PI * 2);
+        ctx.fillStyle = "#fffefa";
+        ctx.fill();
+        ctx.strokeStyle = "#2f7168";
+        ctx.lineWidth = 3;
+        ctx.stroke();
+        ctx.fillStyle = "#263f48";
+        ctx.font = "600 11px -apple-system, BlinkMacSystemFont, 'Microsoft YaHei', sans-serif";
+        ctx.textAlign = "center";
+        ctx.fillText(fmt(entry.value), px, Math.max(14, py - 12));
+      });
+    }
+  </script>
+</body>
+</html>
