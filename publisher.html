@@ -76,6 +76,16 @@
             </div>
             <div class="project-file-row" id="projectFileRow" hidden><span class="status-dot"></span><span id="projectFileName">—</span><button class="icon-button" id="clearProjectButton" type="button" aria-label="移除项目备份">×</button></div>
 
+            <div class="merge-preview" id="mergePreview" hidden>
+              <div class="merge-preview-heading"><div><span class="mini-label">发布前预览</span><b id="mergePreviewTitle">—</b></div><span class="merge-mode" id="mergeMode">首次建立</span></div>
+              <div class="merge-stats">
+                <span><strong id="mergeExamCount">0</strong><small>合并后考试</small></span>
+                <span><strong id="mergeStudentCount">0</strong><small>合并后学生</small></span>
+                <span><strong id="mergeHistoryCount">0</strong><small>已有历史考试</small></span>
+              </div>
+              <p id="mergePreviewCopy">—</p>
+            </div>
+
             <div class="metadata-grid" id="metadataForm" hidden>
               <label><span>考试名称</span><input id="metaExamName" type="text" maxlength="40" placeholder="例如：高二下零诊"></label>
               <label><span>考试编号</span><input id="metaExamId" type="text" maxlength="50" placeholder="例如：2026-zero"></label>
@@ -116,6 +126,7 @@
             <div class="download-panel" id="downloadPanel" hidden>
               <div class="success-mark">✓</div><div><b>发布包已生成</b><p id="downloadSummary">—</p></div>
               <div class="download-links"><a id="downloadZip" class="button button-primary" href="#" download hidden>下载 ZIP 发布包</a><a id="downloadBundle" class="button button-secondary" href="#" download>下载加密数据</a><a id="downloadVersion" class="button button-secondary" href="#" download>下载版本信息</a></div>
+              <div class="release-manifest" id="releaseManifest" hidden><span class="mini-label">RELEASE MANIFEST</span><div><b id="releaseVersion">—</b><span id="releaseHash">—</span></div><small id="releaseFiles">—</small></div>
             </div>
             <div class="github-upload" id="githubUploadPanel">
               <div class="upload-heading"><div><span class="mini-label">OPTIONAL · ONE CLICK</span><b>直接发布到 GitHub Pages</b></div><span class="upload-lock">TOKEN 仅当前页面</span></div>
@@ -126,10 +137,10 @@
                 <label class="token-field"><span>Fine-grained Token</span><input id="githubToken" type="password" placeholder="github_pat_…" autocomplete="off" spellcheck="false"></label>
               </div>
               <div class="upload-actions"><button class="button button-primary" id="uploadButton" type="button" disabled>一键上传并发布</button><span class="upload-status" id="uploadStatus" role="status" aria-live="polite">生成加密发布包后可上传</span></div>
-              <div class="pages-result" id="pagesResult" hidden><span class="success-mark">↗</span><div><b>Pages 正在更新</b><p id="pagesResultText">—</p><a id="pagesLink" href="#" target="_blank" rel="noreferrer">打开成绩查询页面 ↗</a></div></div>
+              <div class="pages-result" id="pagesResult" hidden><span class="success-mark">↗</span><div><b>Pages 正在更新</b><p id="pagesResultText">—</p><a id="pagesLink" href="#" target="_blank" rel="noreferrer">打开成绩查询页面 ↗</a><a id="commitLink" href="#" target="_blank" rel="noreferrer">查看本次提交 ↗</a></div></div>
               <details class="token-help"><summary>Token 需要什么权限？</summary><p>创建 Fine-grained Token 时，将 Repository access 限定为 <code>yusheng266186-beep/grade-query</code>，Repository permissions 只开启 <b>Contents: Read and write</b>。如果仓库启用了严格的 Pages 管理权限，再额外开启 Pages: Read；本工作台不会把 Token 保存到仓库。</p></details>
             </div>
-            <div class="publish-note"><b>如何发布到 GitHub Pages</b><span>把 ZIP 内的 <code>data/grade-data.v2.json</code> 和 <code>data/version.json</code> 上传到仓库同名目录；查询页无需重新生成。每次更新时覆盖这两个文件即可。</span></div>
+            <div class="publish-note"><b>如何发布到 GitHub Pages</b><span>一键发布后工作台会回读远端版本进行校验；如果手动上传，则把 ZIP 内的 <code>data/grade-data.v2.json</code> 和 <code>data/version.json</code> 覆盖到仓库同名目录，查询页无需重新生成。</span></div>
           </section>
         </div>
 

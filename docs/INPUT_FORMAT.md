@@ -12,7 +12,7 @@
 2. 下载 `templates/exam-template.xlsx`，在 Excel 中填写本次考试数据。
 3. 删除模板中的示例学生，填入真实学生记录。
 4. 导入 Excel，处理工作台给出的错误或提醒。
-5. 第一次考试直接生成；以后考试先导入上一次下载的 `grade-project-*.json` 项目备份，再导入本次考试模板。
+5. 第一次考试直接生成；以后考试先导入上一次下载的 `grade-project-*.json` 项目备份，再导入本次考试模板。工作台会先显示合并后的考试数、学生数，并明确提示同编号覆盖。
 6. 点击“生成加密发布包”，输入 GitHub Fine-grained Token，点击“一键上传并发布”。
 
 ## Excel 工作表
@@ -75,7 +75,9 @@
 发布包只包含：
 
 - `data/grade-data.v2.json`：每位学生独立随机盐和 IV 的 AES-GCM 加密记录；
-- `data/version.json`：版本、考试数量、学生数量和生成时间。
+- `data/version.json`：版本、考试数量、学生数量、生成时间和发布包 SHA-256 校验值。
+
+生成完成后，工作台会显示 `releaseId`、加密记录数量和校验值。上传到 GitHub 后会回读 `data/version.json`，确认远端版本与本次生成的发布包一致；Pages 仍需要等待 GitHub 完成构建。
 
 查询页会优先读取 v2 发布包，旧版逐文件数据仍保留为兼容回退。
 

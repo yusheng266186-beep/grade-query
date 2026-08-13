@@ -15,6 +15,7 @@ const state = {
   project: null,
   examFileName: "",
   projectFileName: "",
+  projectWarnings: [],
   generated: null,
 };
 
@@ -94,6 +95,29 @@ function signed(value) {
 
 function clone(value) {
   return JSON.parse(JSON.stringify(value));
+}
+
+function validateProjectBackup(payload) {
+  const errors = [];
+  const warnings = [];
+  if (!payload || payload.kind !== "grade-project" || payload.schemaVersion !== 2) {
+    errors.push("这不是成绩发布工作台生成的 v2 项目备份。");
+    return { errors, warnings };
+  }
+  if (!Array.isArray(payload.exams)) errors.push("项目备份缺少 exams 历史考试数组。");
+  if (!Array.isArray(payload.students)) errors.push("项目备份缺少 students 学生数组。");
+  if (errors.length) return { errors, warnings };
+  if (!payload.exams.length) warnings.push("项目备份中没有历史考试，本次会从当前考试重新建立记录。");
+  const ids = new Set();
+  payload.students.forEach((student, index) => {
+    const id = canonicalStudentId(student?.studentId);
+    if (!id) errors.push(`项目备份第 ${index + 1} 位学生缺少查询识别码。`);
+    else if (ids.has(id)) errors.push(`项目备份中查询识别码重复：${id}。`);
+    else ids.add(id);
+    if (!normalizeText(student?.name)) warnings.push(`项目备份中的 ${id || `第 ${index + 1} 位学生`}缺少姓名。`);
+    if (!Array.isArray(student?.exams)) warnings.push(`项目备份中的 ${id || `第 ${index + 1} 位学生`}没有历次考试数组，将在合并时补全。`);
+  });
+  return { errors, warnings };
 }
 
 function rowValue(row, aliases) {
@@ -502,6 +526,57 @@ function validateExam(exam) {
   return { errors, warnings, validStudents };
 }
 
+function getMergePreview(exam) {
+  const history = Array.isArray(state.project?.exams) ? state.project.exams : [];
+  const replacement = Boolean(exam?.exam?.examId && history.some((item) => item.examId === exam.exam.examId));
+  const studentIds = new Set((state.project?.students || []).map((student) => canonicalStudentId(student.studentId)).filter(Boolean));
+  for (const student of exam?.students || []) {
+    const id = canonicalStudentId(student.studentId);
+    if (id) studentIds.add(id);
+  }
+  return {
+    historyCount: history.length,
+    examCount: history.length + (replacement ? 0 : 1),
+    studentCount: studentIds.size,
+    replacement,
+  };
+}
+
+function renderMergePreview(exam) {
+  const preview = $("mergePreview");
+  if (!preview || !exam) {
+    if (preview) preview.hidden = true;
+    return;
+  }
+  const summary = getMergePreview(exam);
+  $("mergePreviewTitle").textContent = `${exam.exam.examName || "未命名考试"} · ${exam.exam.examId || "待填写编号"}`;
+  $("mergeMode").textContent = summary.replacement ? "覆盖同编号" : state.project ? "新增考试" : "首次建立";
+  $("mergeMode").className = `merge-mode${summary.replacement ? " replace" : ""}`;
+  $("mergeExamCount").textContent = summary.examCount;
+  $("mergeStudentCount").textContent = summary.studentCount;
+  $("mergeHistoryCount").textContent = summary.historyCount;
+  $("mergePreviewCopy").textContent = summary.replacement
+    ? `项目备份中已经存在“${exam.exam.examName || exam.exam.examId}”。本次会覆盖这一场考试，其他 ${Math.max(0, summary.historyCount - 1)} 场历史记录保持不变。`
+    : state.project
+      ? `本次会新增一场考试，并为 ${exam.students.length} 条当前记录更新个人报告；已有历史趋势会继续保留。`
+      : "这是第一次建立发布项目；生成项目备份后，下次考试即可继续累计趋势。";
+  preview.hidden = false;
+}
+
+function invalidateGenerated() {
+  state.generated = null;
+  const downloadPanel = $("downloadPanel");
+  if (downloadPanel) downloadPanel.hidden = true;
+  const releaseManifest = $("releaseManifest");
+  if (releaseManifest) releaseManifest.hidden = true;
+  const pagesResult = $("pagesResult");
+  if (pagesResult) pagesResult.hidden = true;
+  const uploadButton = $("uploadButton");
+  if (uploadButton) uploadButton.disabled = true;
+  const uploadStatus = $("uploadStatus");
+  if (uploadStatus) uploadStatus.textContent = "生成加密发布包后可上传";
+}
+
 function renderMessages(result) {
   const messages = [
     ...result.errors.slice(0, 36).map((text) => `<div class="message error"><b>错误</b><span>${escapeHtml(text)}</span></div>`),
@@ -534,6 +609,7 @@ function escapeHtml(value) {
 
 function syncMetadataFromForm() {
   if (!state.exam) return;
+  invalidateGenerated();
   state.exam.exam.examName = normalizeText($("metaExamName").value);
   state.exam.exam.examId = normalizeText($("metaExamId").value);
   state.exam.exam.examDate = toDate($("metaExamDate").value);
@@ -563,9 +639,14 @@ function renderReview() {
     $("reviewState").className = "panel-state muted";
     $("generateButton").disabled = true;
     $("backupButton").disabled = true;
+    renderMergePreview(null);
     return;
   }
   const result = validateExam(state.exam);
+  if (state.projectWarnings.length) result.warnings.unshift(...state.projectWarnings);
+  const merge = getMergePreview(state.exam);
+  if (merge.replacement) result.warnings.unshift(`项目备份中已有考试编号 ${state.exam.exam.examId}，生成时会覆盖该场考试。`);
+  renderMergePreview(state.exam);
   renderMessages(result);
   renderPreview(state.exam, result);
   const valid = result.errors.length === 0 && result.validStudents > 0;
@@ -594,6 +675,7 @@ async function readExamFile(file) {
 async function importExam(file) {
   try {
     const exam = await readExamFile(file);
+    invalidateGenerated();
     state.exam = exam;
     state.examFileName = file.name;
     $("examDropZone").hidden = true;
@@ -614,12 +696,15 @@ async function importExam(file) {
 async function importProject(file) {
   try {
     const payload = JSON.parse(await file.text());
-    if (payload.kind !== "grade-project" || payload.schemaVersion !== 2) throw new Error("这不是成绩发布工作台生成的 v2 项目备份。");
+    const check = validateProjectBackup(payload);
+    if (check.errors.length) throw new Error(check.errors[0]);
+    invalidateGenerated();
     state.project = clone(payload);
+    state.projectWarnings = check.warnings;
     state.projectFileName = file.name;
     $("projectFileRow").hidden = false;
     $("projectFileName").textContent = `${file.name} · ${payload.students?.length || 0} 位学生 · ${payload.exams?.length || 0} 场考试`;
-    showToast("历史项目备份已载入；导入本次考试后会自动合并");
+    showToast(check.warnings.length ? `历史项目已载入，有 ${check.warnings.length} 条提醒` : "历史项目备份已载入；导入本次考试后会自动合并");
     if (state.exam) renderReview();
   } catch (error) {
     showToast(error.message || "项目备份导入失败");
@@ -627,12 +712,14 @@ async function importProject(file) {
 }
 
 function clearExam() {
-  state.exam = null; state.examFileName = ""; state.generated = null;
-  examFile.value = ""; $("examDropZone").hidden = false; $("examFileRow").hidden = true; metadataForm.hidden = true; validationSummary.hidden = true; previewWrap.hidden = true; messageStack.hidden = true; $("downloadPanel").hidden = true; $("importState").textContent = "等待文件"; $("importState").className = "panel-state"; renderReview();
+  state.exam = null; state.examFileName = "";
+  invalidateGenerated();
+  examFile.value = ""; $("examDropZone").hidden = false; $("examFileRow").hidden = true; metadataForm.hidden = true; validationSummary.hidden = true; previewWrap.hidden = true; messageStack.hidden = true; $("importState").textContent = "等待文件"; $("importState").className = "panel-state"; renderReview();
 }
 
 function clearProject() {
-  state.project = null; state.projectFileName = ""; projectFile.value = ""; $("projectFileRow").hidden = true; showToast("已移除历史项目备份");
+  state.project = null; state.projectWarnings = []; state.projectFileName = ""; projectFile.value = ""; $("projectFileRow").hidden = true; invalidateGenerated(); showToast("已移除历史项目备份");
+  if (state.exam) renderReview();
 }
 
 function setDownload(anchor, blob, filename) {
@@ -650,6 +737,11 @@ function downloadText(text, filename, mime = "application/json") {
 
 function textToBase64(text) {
   return bytesToBase64(new TextEncoder().encode(text));
+}
+
+function base64ToText(value) {
+  const clean = String(value || "").replace(/\s/g, "");
+  return new TextDecoder().decode(Uint8Array.from(atob(clean), (char) => char.charCodeAt(0)));
 }
 
 async function githubRequest(url, token, options = {}) {
@@ -711,6 +803,18 @@ async function uploadRelease() {
     const tree = await githubRequest(`${apiRoot}/git/trees`, token, { method: "POST", body: JSON.stringify({ base_tree: headCommit.tree.sha, tree: treeEntries }) });
     const commit = await githubRequest(`${apiRoot}/git/commits`, token, { method: "POST", body: JSON.stringify({ message: `data: publish ${state.generated.version.latestExam || "grade report"}`, tree: tree.sha, parents: [headSha] }) });
     await githubRequest(`${apiRoot}/git/refs/heads/${encodeURIComponent(branch)}`, token, { method: "PATCH", body: JSON.stringify({ sha: commit.sha, force: false }) });
+    $("uploadStatus").textContent = "正在回读 GitHub 版本…";
+    let verificationText = "提交已完成";
+    try {
+      const remoteVersionFile = await githubRequest(`${apiRoot}/contents/data/version.json?ref=${encodeURIComponent(branch)}`, token);
+      const remoteVersion = JSON.parse(base64ToText(remoteVersionFile.content));
+      if (remoteVersion.releaseId !== state.generated.version.releaseId || remoteVersion.bundleSha256 !== state.generated.version.bundleSha256) {
+        throw new Error("GitHub 返回的版本与本次发布不一致");
+      }
+      verificationText = "GitHub 文件已回读校验";
+    } catch (error) {
+      verificationText = `提交已完成，版本回读暂未通过：${error.message}`;
+    }
     let pagesUrl = `https://${repoInfo.owner}.github.io/${repoInfo.repo}/`;
     try {
       const pages = await githubRequest(`${apiRoot}/pages`, token);
@@ -719,7 +823,8 @@ async function uploadRelease() {
       // Contents-only tokens may not have Pages read permission; the deterministic URL is still valid.
     }
     $("pagesLink").href = pagesUrl;
-    $("pagesResultText").textContent = `提交 ${commit.sha.slice(0, 7)} 已完成。GitHub Pages 通常需要几十秒到几分钟刷新。`;
+    $("commitLink").href = commit.html_url || `https://github.com/${repoInfo.owner}/${repoInfo.repo}/commit/${commit.sha}`;
+    $("pagesResultText").textContent = `${verificationText}（${commit.sha.slice(0, 7)}）。GitHub Pages 通常需要几十秒到几分钟刷新。`;
     $("pagesResult").hidden = false;
     $("uploadStatus").textContent = "上传成功，等待 Pages 刷新";
     showToast("已上传到 GitHub，Pages 正在更新");
@@ -786,8 +891,12 @@ async function buildEncryptedBundle(project) {
     studentCount: project.students.length,
     examCount: project.exams.length,
     latestExam: project.meta?.latestExam || "",
+    latestExamId: project.exams[project.exams.length - 1]?.examId || "",
+    recordCount: Object.keys(records).length,
     records,
   };
+  const bundleSha256 = await sha256Hex(JSON.stringify(bundle));
+  const releaseId = `${project.dataVersion}-${bundleSha256.slice(0, 12)}`;
   const version = {
     kind: "grade-query-version",
     schemaVersion: 2,
@@ -797,6 +906,11 @@ async function buildEncryptedBundle(project) {
     studentCount: bundle.studentCount,
     examCount: bundle.examCount,
     latestExam: bundle.latestExam,
+    latestExamId: bundle.latestExamId,
+    recordCount: bundle.recordCount,
+    releaseId,
+    bundleSha256,
+    generatedBy: "grade-query-publisher-v2",
     replaceFiles: ["data/grade-data.v2.json", "data/version.json"],
   };
   return { bundle, version };
@@ -807,7 +921,7 @@ async function makeZip(bundle, version) {
   const zip = new window.JSZip();
   zip.file("data/grade-data.v2.json", JSON.stringify(bundle, null, 2));
   zip.file("data/version.json", JSON.stringify(version, null, 2));
-  zip.file("README-发布说明.txt", `成绩查询发布包\n\n1. 将 data/grade-data.v2.json 和 data/version.json 上传到现有仓库的 data/ 目录。\n2. 覆盖同名文件即可，查询页会自动优先读取 v2 数据。\n3. 不要把项目备份文件上传到公开仓库；项目备份仅用于下一次考试继续合并。\n4. 本包生成时间：${version.generatedAt}\n`);
+  zip.file("README-发布说明.txt", `成绩查询发布包\n\n1. 将 data/grade-data.v2.json 和 data/version.json 上传到现有仓库的 data/ 目录。\n2. 覆盖同名文件即可，查询页会自动优先读取 v2 数据。\n3. 不要把项目备份文件上传到公开仓库；项目备份仅用于下一次考试继续合并。\n4. 发布编号：${version.releaseId}\n5. 数据校验：SHA-256 ${version.bundleSha256}\n6. 本包生成时间：${version.generatedAt}\n`);
   try {
     const response = await fetch("index.html", { cache: "no-store" });
     if (response.ok) zip.file("index.html", await response.text());
@@ -831,6 +945,10 @@ async function generateRelease() {
     if (zipBlob) setDownload($("downloadZip"), zipBlob, `grade-query-release-${version.dataVersion.replace(/[^a-z0-9-]/gi, "-")}.zip`);
     else $("downloadZip").hidden = true;
     $("downloadSummary").textContent = `${bundle.studentCount} 位学生 · ${bundle.examCount} 场考试 · ${new Date(version.generatedAt).toLocaleString("zh-CN")}`;
+    $("releaseVersion").textContent = version.releaseId;
+    $("releaseHash").textContent = `SHA-256 ${version.bundleSha256.slice(0, 16)}…`;
+    $("releaseFiles").textContent = `${version.recordCount} 条加密记录 · ${version.replaceFiles.join(" + ")}`;
+    $("releaseManifest").hidden = false;
     $("downloadPanel").hidden = false;
     $("sideStatus").textContent = "已生成";
     $("sideStatusCopy").textContent = "发布包已准备好，下载后覆盖仓库 data 目录中的同名文件。";
@@ -850,7 +968,7 @@ async function generateRelease() {
 
 function saveBackup() {
   try {
-    const project = currentProject();
+    const project = state.generated?.project || currentProject();
     const name = `grade-project-${project.dataVersion.replace(/[^a-z0-9-]/gi, "-")}.json`;
     downloadText(JSON.stringify(project, null, 2), name);
     showToast("项目备份已下载，请妥善保存在本地");

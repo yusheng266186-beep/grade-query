@@ -4,6 +4,7 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
   <meta name="color-scheme" content="light">
+  <meta name="theme-color" content="#173c4b">
   <meta name="robots" content="noindex,nofollow,noarchive">
   <meta http-equiv="Cache-Control" content="no-store, max-age=0">
   <title>高二4班 · 零诊成绩报告</title>
@@ -152,6 +153,10 @@
       box-shadow: 0 0 0 4px rgba(47, 113, 104, .10);
     }
     .field input::placeholder { color: #afb7b7; }
+    .input-wrap { position: relative; }
+    .input-wrap input { padding-right: 48px; }
+    .field-clear { position: absolute; top: 50%; right: 11px; width: 30px; height: 30px; display: grid; place-items: center; padding: 0; border: 0; border-radius: 50%; color: #7d8a8c; background: #e9efed; font-size: 18px; line-height: 1; transform: translateY(-50%); cursor: pointer; }
+    .field-clear:hover { color: var(--navy); background: #dce9e5; }
     .primary-btn {
       width: 100%;
       height: 54px;
@@ -169,6 +174,7 @@
     .primary-btn:hover { transform: translateY(-1px); box-shadow: 0 18px 34px rgba(28, 79, 82, .28); }
     .primary-btn:active { transform: translateY(0); }
     .primary-btn:disabled { opacity: .72; cursor: wait; transform: none; }
+    .primary-btn[aria-busy="true"]::after { content: ""; width: 13px; height: 13px; margin-left: 8px; border: 2px solid rgba(255,255,255,.42); border-top-color: #fff; border-radius: 50%; animation: spin .7s linear infinite; }
     .error {
       min-height: 20px;
       margin-top: 12px;
@@ -176,6 +182,7 @@
       text-align: center;
       font-size: 12px;
     }
+    .query-helper { display: flex; justify-content: space-between; gap: 12px; margin-top: 4px; color: #9aa5a7; font-size: 10px; line-height: 1.5; }
     .query-note {
       margin: 18px 0 0;
       color: rgba(255,255,255,.48);
@@ -405,9 +412,13 @@
     .context-stat strong { display: block; font-size: 22px; }
     .context-stat span { display: block; margin-top: 5px; color: #849092; font-size: 10px; }
     .source-note { margin: 18px 0 0; color: #929b9a; text-align: center; font-size: 10px; line-height: 1.7; }
+    .report-actions { display: flex; justify-content: center; gap: 9px; margin: 17px 0 0; }
+    .report-actions .ghost-btn { min-width: 108px; min-height: 38px; font-size: 11px; }
+    .report-action-main { color: #fff; border-color: var(--navy); background: var(--navy); }
 
     .fade-in { animation: fadeIn .45s ease both; }
     @keyframes fadeIn { from { opacity: 0; transform: translateY(10px); } to { opacity: 1; transform: translateY(0); } }
+    @keyframes spin { to { transform: rotate(360deg); } }
 
     @media (max-width: 860px) {
       .hero, .section-grid, .detail-grid { grid-template-columns: 1fr; }
@@ -432,6 +443,9 @@
       .panel-head { flex-direction: column; gap: 8px; }
       .chart-wrap { height: 230px; }
       .query-card { padding: 24px 20px; }
+      .query-helper { flex-direction: column; gap: 3px; text-align: center; }
+      .report-actions { position: sticky; bottom: calc(10px + env(safe-area-inset-bottom)); z-index: 5; margin: 17px -8px 0; padding: 8px; border: 1px solid rgba(255,255,255,.72); border-radius: 16px; background: rgba(244,242,236,.86); box-shadow: 0 12px 30px rgba(25,48,57,.10); backdrop-filter: blur(12px); }
+      .report-actions .ghost-btn { flex: 1; }
     }
   </style>
 </head>
@@ -448,14 +462,15 @@
         <form class="query-card" id="queryForm" novalidate aria-describedby="queryHint">
           <div class="field">
             <label for="nameInput">学生姓名 <span>必填</span></label>
-            <input id="nameInput" name="name" type="text" autocomplete="off" autocapitalize="none" spellcheck="false" maxlength="20" placeholder="请输入学生姓名">
+            <div class="input-wrap"><input id="nameInput" name="name" type="text" autocomplete="off" autocapitalize="none" autocorrect="off" spellcheck="false" enterkeyhint="next" maxlength="20" placeholder="请输入学生姓名"><button class="field-clear" type="button" data-clear="nameInput" aria-label="清空学生姓名" hidden>×</button></div>
           </div>
           <div class="field">
             <label for="idInput">身份证号码 / 查询识别码 <span>必填</span></label>
-            <input id="idInput" name="id" type="text" inputmode="text" autocomplete="off" autocapitalize="characters" spellcheck="false" maxlength="40" placeholder="请输入完整身份证号码或查询识别码">
+            <div class="input-wrap"><input id="idInput" name="id" type="text" inputmode="text" autocomplete="off" autocapitalize="characters" autocorrect="off" spellcheck="false" enterkeyhint="done" maxlength="40" placeholder="请输入完整身份证号码或查询识别码"><button class="field-clear" type="button" data-clear="idInput" aria-label="清空查询识别码" hidden>×</button></div>
           </div>
           <button class="primary-btn" id="queryButton" type="submit">查看成绩报告</button>
           <div class="error" id="errorText" role="alert" aria-live="polite"></div>
+          <div class="query-helper"><span>支持学号、查询识别码或身份证号码</span><span>姓名与识别码需完全匹配</span></div>
         </form>
         <p class="query-note" id="queryHint">数据加密存储 · 成绩仅供学生本人及家长查阅 · 请勿在公共设备保存输入内容</p>
       </div>
@@ -620,6 +635,7 @@
       }
       queryButton.disabled = true;
       queryButton.textContent = "正在安全读取…";
+      queryButton.setAttribute("aria-busy", "true");
       try {
         const student = await loadStudent(name, id);
         if (!student) {
@@ -639,10 +655,37 @@
       } finally {
         queryButton.disabled = false;
         queryButton.textContent = "查看成绩报告";
+        queryButton.removeAttribute("aria-busy");
       }
     }
 
     queryForm.addEventListener("submit", handleQuery);
+
+    function syncClearButton(input) {
+      const button = document.querySelector(`[data-clear="${input.id}"]`);
+      if (button) button.hidden = !input.value;
+    }
+
+    [nameInput, idInput].forEach((input) => {
+      input.addEventListener("input", () => syncClearButton(input));
+      input.addEventListener("keydown", (event) => {
+        if (event.key === "Enter" && input === nameInput && idInput.value.trim() === "") {
+          event.preventDefault();
+          idInput.focus();
+        }
+      });
+      syncClearButton(input);
+    });
+    document.querySelectorAll("[data-clear]").forEach((button) => {
+      button.addEventListener("click", () => {
+        const input = document.getElementById(button.dataset.clear);
+        if (!input) return;
+        input.value = "";
+        syncClearButton(input);
+        input.focus();
+        errorText.textContent = "";
+      });
+    });
 
     function subjectRows(student) {
       return SUBJECTS.map((subject) => {
@@ -684,7 +727,7 @@
       const belowControl = pairs.filter((item) => item.controlDiff < 0).sort((a, b) => Math.abs(a.controlDiff) - Math.abs(b.controlDiff));
       const belowBachelor = pairs.filter((item) => item.bachelorDiff < 0).sort((a, b) => Math.abs(a.bachelorDiff) - Math.abs(b.bachelorDiff));
       const focus = belowControl[0] ?? belowBachelor[0] ?? strongest[0];
-      const exams = student.exams.filter((exam) => number(exam.total) != null);
+      const exams = (student.exams || []).filter((exam) => number(exam.total) != null);
       const latest = exams[exams.length - 1];
       const previous = exams[exams.length - 2];
       const lastCity = [...exams].reverse().find((exam) => exam.scope === "city" && exam.name !== latest?.name);
@@ -712,7 +755,7 @@
     }
 
     function rankTimeline(student) {
-      return student.exams.map((exam) => {
+      return (student.exams || []).map((exam) => {
         const isCity = exam.scope === "city";
         const zeroExtra = exam.name.includes("零诊")
           ? `<div class="zero-ranks">校内第 ${fmt(student.current.schoolRank, 0)} 名<br>班级第 ${fmt(student.current.classRank, 0)} 名</div>`
@@ -730,7 +773,7 @@
     function knowledgeContent(student) {
       const items = [];
       for (const subject of SUBJECTS) {
-        const detail = student.knowledge[subject.key];
+        const detail = (student.knowledge || {})[subject.key];
         if (!detail?.weak?.length) continue;
         for (const point of detail.weak.slice(0, 2)) {
           items.push(`
@@ -835,12 +878,15 @@
           </details>
         </div>
 
-        <p class="source-note">数据版本 ${escapeHtml(activeDataMeta.dataVersion || "legacy")} · 生成于 ${escapeHtml(activeDataMeta.generatedAt || "—")}。<br>排名范围不同，请结合“市排名 / 校排名 / 班级排名”标签阅读。</p>`;
+        <p class="source-note">数据版本 ${escapeHtml(activeDataMeta.dataVersion || "legacy")} · 生成于 ${escapeHtml(activeDataMeta.generatedAt || "—")}。<br>排名范围不同，请结合“市排名 / 校排名 / 班级排名”标签阅读。</p>
+        <div class="report-actions" aria-label="报告操作"><button class="ghost-btn" type="button" id="reportTopButton">回到顶部</button><button class="ghost-btn report-action-main" type="button" id="backButtonBottom">继续查询</button></div>`;
 
       queryView.hidden = true;
       reportView.hidden = false;
       window.scrollTo(0, 0);
       document.getElementById("backButton").addEventListener("click", resetQuery);
+      document.getElementById("backButtonBottom").addEventListener("click", resetQuery);
+      document.getElementById("reportTopButton").addEventListener("click", () => window.scrollTo({ top: 0, behavior: "smooth" }));
       reportShell.querySelectorAll("[data-trend]").forEach((button) => {
         button.addEventListener("click", () => {
           reportShell.querySelectorAll("[data-trend]").forEach((item) => item.classList.remove("active"));
@@ -872,6 +918,8 @@
       reportShell.innerHTML = "";
       nameInput.value = "";
       idInput.value = "";
+      syncClearButton(nameInput);
+      syncClearButton(idInput);
       errorText.textContent = "";
       window.scrollTo(0, 0);
       nameInput.focus();
