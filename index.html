@@ -351,6 +351,10 @@
     .trend-tab.active { color: white; background: var(--navy); border-color: var(--navy); }
     .chart-wrap { position: relative; height: 260px; margin-top: 18px; }
     .chart-wrap canvas { display: block; width: 100%; height: 100%; }
+    .chart-wrap canvas:focus-visible { outline: 3px solid rgba(47,113,104,.22); outline-offset: -3px; border-radius: 12px; }
+    .chart-tooltip { position: absolute; z-index: 2; display: grid; gap: 3px; min-width: 112px; padding: 9px 11px; border: 1px solid rgba(255,255,255,.78); border-radius: 11px; color: #fff; background: rgba(23,60,75,.94); box-shadow: 0 10px 25px rgba(23,60,75,.18); pointer-events: none; font-size: 10px; }
+    .chart-tooltip b { color: #e3c48c; font-size: 10px; }
+    .chart-tooltip span { color: rgba(255,255,255,.78); }
     .chart-empty {
       position: absolute;
       inset: 0;
@@ -441,19 +445,19 @@
           <h1>零诊成绩报告</h1>
           <p>看清当下，也看见这一路的变化</p>
         </header>
-        <form class="query-card" id="queryForm" novalidate>
+        <form class="query-card" id="queryForm" novalidate aria-describedby="queryHint">
           <div class="field">
             <label for="nameInput">学生姓名 <span>必填</span></label>
-            <input id="nameInput" name="name" autocomplete="off" maxlength="20" placeholder="请输入学生姓名">
+            <input id="nameInput" name="name" type="text" autocomplete="off" autocapitalize="none" spellcheck="false" maxlength="20" placeholder="请输入学生姓名">
           </div>
           <div class="field">
-            <label for="idInput">身份证号码 <span>必填</span></label>
-            <input id="idInput" name="id" autocomplete="off" maxlength="18" placeholder="请输入完整身份证号码">
+            <label for="idInput">身份证号码 / 查询识别码 <span>必填</span></label>
+            <input id="idInput" name="id" type="text" inputmode="text" autocomplete="off" autocapitalize="characters" spellcheck="false" maxlength="40" placeholder="请输入完整身份证号码或查询识别码">
           </div>
-          <button class="primary-btn" id="queryButton" type="button">查看成绩报告</button>
+          <button class="primary-btn" id="queryButton" type="submit">查看成绩报告</button>
           <div class="error" id="errorText" role="alert" aria-live="polite"></div>
         </form>
-        <p class="query-note">数据加密存储 · 成绩仅供学生本人及家长查阅</p>
+        <p class="query-note" id="queryHint">数据加密存储 · 成绩仅供学生本人及家长查阅 · 请勿在公共设备保存输入内容</p>
       </div>
     </section>
 
@@ -500,7 +504,13 @@
       .replace(/>/g, "&gt;")
       .replace(/\"/g, "&quot;")
       .replace(/'/g, "&#039;");
-    const number = (value) => Number.isFinite(Number(value)) ? Number(value) : null;
+    const number = (value) => {
+      if (value == null) return null;
+      if (typeof value === "string" && !value.trim()) return null;
+      if (["—", "-", "--", "无", "暂无", "null", "undefined", "/"].includes(String(value).trim().toLowerCase())) return null;
+      const parsed = Number(value);
+      return Number.isFinite(parsed) ? parsed : null;
+    };
     const fmt = (value, digits = 1) => number(value) == null ? "—" : Number(value).toFixed(digits).replace(/\.0$/, "");
     const signed = (value) => {
       const n = number(value);
@@ -512,25 +522,55 @@
       if (control != null && control >= 0) return { label: "特控线上", cls: "state-control" };
       if (bachelor != null && bachelor >= 0) return { label: "本科线上", cls: "state-bachelor" };
       if (bachelor != null && bachelor >= -10) return { label: "本科临界", cls: "state-close" };
-      return { label: "本科线下", cls: "state-below" };
+      if (bachelor != null) return { label: "本科线下", cls: "state-below" };
+      return { label: "暂无线差", cls: "state-close" };
     };
-    const diffClass = (value) => number(value) >= 0 ? "diff-positive" : "diff-negative";
+    const diffClass = (value) => number(value) == null ? "diff-neutral" : number(value) >= 0 ? "diff-positive" : "diff-negative";
 
     const textEncoder = new TextEncoder();
     const bytesToHex = (bytes) => Array.from(bytes, (byte) => byte.toString(16).padStart(2, "0")).join("");
     const base64ToBytes = (value) => Uint8Array.from(atob(value), (char) => char.charCodeAt(0));
+
+    let dataBundlePromise = null;
+    let activeDataMeta = { ...BUILD_META, schemaVersion: 1, dataVersion: "legacy" };
 
     async function sha256Hex(value) {
       const digest = await crypto.subtle.digest("SHA-256", textEncoder.encode(value));
       return bytesToHex(new Uint8Array(digest));
     }
 
-    async function loadStudent(name, id) {
-      const secret = `${name.trim()}|${id.replace(/\s+/g, "").trim().toUpperCase()}`;
-      const fileId = await sha256Hex(`grade-query-v1|${secret}`);
-      const response = await fetch(`data/${fileId}.json`, { cache: "no-store" });
-      if (!response.ok) return null;
-      const encrypted = await response.json();
+    async function fetchJsonWithTimeout(url, timeout = 9000) {
+      const controller = new AbortController();
+      const timer = window.setTimeout(() => controller.abort(), timeout);
+      try {
+        const response = await fetch(url, { cache: "no-store", signal: controller.signal });
+        if (!response.ok) return null;
+        return await response.json();
+      } finally {
+        window.clearTimeout(timer);
+      }
+    }
+
+    function loadDataBundle() {
+      if (!dataBundlePromise) {
+        dataBundlePromise = fetchJsonWithTimeout(`data/grade-data.v2.json?v=${Date.now()}`).then((bundle) => {
+          if (bundle?.kind !== "grade-query-bundle" || bundle.schemaVersion !== 2) return null;
+          activeDataMeta = {
+            ...activeDataMeta,
+            schemaVersion: bundle.schemaVersion,
+            dataVersion: bundle.dataVersion || "v2",
+            generatedAt: bundle.generatedAt,
+            studentCount: bundle.studentCount,
+            examCount: bundle.examCount,
+            latestExam: bundle.latestExam,
+          };
+          return bundle;
+        }).catch(() => null);
+      }
+      return dataBundlePromise;
+    }
+
+    async function decryptRecord(secret, encrypted) {
       const material = await crypto.subtle.importKey(
         "raw",
         textEncoder.encode(secret),
@@ -553,18 +593,29 @@
       return JSON.parse(new TextDecoder().decode(plaintext));
     }
 
+    async function loadStudent(name, id) {
+      const secret = `${name.trim()}|${id.replace(/\s+/g, "").trim().toUpperCase()}`;
+      const v2Id = await sha256Hex(`grade-query-v2|${secret}`);
+      const bundle = await loadDataBundle();
+      if (bundle?.records?.[v2Id]) return decryptRecord(secret, bundle.records[v2Id]);
+      const legacyId = await sha256Hex(`grade-query-v1|${secret}`);
+      const encrypted = await fetchJsonWithTimeout(`data/${legacyId}.json`);
+      if (!encrypted) return null;
+      return decryptRecord(secret, encrypted);
+    }
+
     async function handleQuery(event) {
       if (event) event.preventDefault();
       const name = nameInput.value.trim();
       const id = idInput.value.replace(/\s+/g, "").trim().toUpperCase();
       errorText.textContent = "";
       if (!name || !id) {
-        errorText.textContent = "请同时填写学生姓名和完整身份证号码";
+        errorText.textContent = "请同时填写学生姓名和完整身份证号码 / 查询识别码";
         (!name ? nameInput : idInput).focus();
         return;
       }
-      if (!window.crypto || !window.crypto.subtle) {
-        errorText.textContent = "当前浏览器版本过旧，请使用微信、Chrome、Edge或Safari打开。";
+      if (!window.crypto?.subtle || !window.isSecureContext) {
+        errorText.textContent = "请使用微信、Chrome、Edge 或 Safari 通过 HTTPS 打开本页面。";
         return;
       }
       queryButton.disabled = true;
@@ -584,7 +635,7 @@
         console.error(error);
         queryView.hidden = false;
         reportView.hidden = true;
-        errorText.textContent = "查询失败，请检查网络后重试，或确认姓名和身份证号码。";
+        errorText.textContent = error?.name === "AbortError" ? "读取超时，请检查网络后重试。" : "查询失败，请检查网络后重试，或确认姓名和查询识别码。";
       } finally {
         queryButton.disabled = false;
         queryButton.textContent = "查看成绩报告";
@@ -592,29 +643,28 @@
     }
 
     queryForm.addEventListener("submit", handleQuery);
-    queryButton.addEventListener("click", handleQuery);
 
     function subjectRows(student) {
       return SUBJECTS.map((subject) => {
-        const item = student.current.subjects[subject.key];
+        const item = student.current.subjects?.[subject.key] || { score: null, rank: null, controlDiff: null, bachelorDiff: null };
         const status = statusFor(item.controlDiff, item.bachelorDiff);
         const controlLine = item.score != null && item.controlDiff != null ? item.score - item.controlDiff : null;
         const bachelorLine = item.score != null && item.bachelorDiff != null ? item.score - item.bachelorDiff : null;
-        const scorePct = Math.max(0, Math.min(100, (item.score / subject.max) * 100));
-        const controlPct = Math.max(0, Math.min(100, (controlLine / subject.max) * 100));
-        const bachelorPct = Math.max(0, Math.min(100, (bachelorLine / subject.max) * 100));
+        const scorePct = item.score == null ? 0 : Math.max(0, Math.min(100, (item.score / subject.max) * 100));
+        const controlPct = controlLine == null ? null : Math.max(0, Math.min(100, (controlLine / subject.max) * 100));
+        const bachelorPct = bachelorLine == null ? null : Math.max(0, Math.min(100, (bachelorLine / subject.max) * 100));
         return `
           <article class="subject-row">
             <div class="subject-top">
               <span class="subject-name">${subject.name}</span>
               <strong class="subject-score">${fmt(item.score)}<small>分</small></strong>
-              <span class="subject-rank">市排名 ${fmt(item.rank, 0)}</span>
+              <span class="subject-rank">科目排名 ${fmt(item.rank, 0)}</span>
               <span class="state-pill ${status.cls}">${status.label}</span>
             </div>
             <div class="meter" aria-hidden="true">
               <i class="meter-fill" style="width:${scorePct}%"></i>
-              <b class="meter-mark bachelor" style="left:${bachelorPct}%"></b>
-              <b class="meter-mark control" style="left:${controlPct}%"></b>
+              <b class="meter-mark bachelor" style="${bachelorPct == null ? "display:none" : `left:${bachelorPct}%`}"></b>
+              <b class="meter-mark control" style="${controlPct == null ? "display:none" : `left:${controlPct}%`}"></b>
             </div>
             <div class="subject-foot">
               <span>本科线 ${fmt(bachelorLine)}</span>
@@ -629,7 +679,7 @@
     }
 
     function createInsights(student) {
-      const pairs = SUBJECTS.map((subject) => ({ ...subject, ...student.current.subjects[subject.key] }));
+      const pairs = SUBJECTS.map((subject) => ({ ...subject, ...(student.current.subjects?.[subject.key] || {}) }));
       const strongest = [...pairs].sort((a, b) => (b.controlDiff ?? -999) - (a.controlDiff ?? -999)).slice(0, 2);
       const belowControl = pairs.filter((item) => item.controlDiff < 0).sort((a, b) => Math.abs(a.controlDiff) - Math.abs(b.controlDiff));
       const belowBachelor = pairs.filter((item) => item.bachelorDiff < 0).sort((a, b) => Math.abs(a.bachelorDiff) - Math.abs(b.bachelorDiff));
@@ -647,7 +697,9 @@
           : cityRankChange < 0
             ? `；较上次市级统考后移${Math.abs(cityRankChange)}名。`
             : "；与上次市级统考排名持平。";
-      const focusText = focus.controlDiff < 0 && focus.bachelorDiff >= 0
+      const focusText = !focus
+        ? "当前报告没有足够的科目线数据生成分析。"
+        : focus.controlDiff < 0 && focus.bachelorDiff >= 0
         ? `${focus.name}已达本科有效分，距离特控有效分${Math.abs(focus.controlDiff).toFixed(1)}分。`
         : focus.bachelorDiff < 0
           ? `${focus.name}距离本科有效分${Math.abs(focus.bachelorDiff).toFixed(1)}分，是当前较接近的突破点。`
@@ -692,38 +744,40 @@
       return items.length ? items.join("") : `<p class="panel-subtitle">暂未匹配到小题知识点数据。</p>`;
     }
 
-    function classContext() {
-      if (!CLASS_SUMMARY) return `<p class="panel-subtitle">暂未匹配到班级汇总数据。</p>`;
+    function classContext(student) {
+      const summary = student?.classSummary || CLASS_SUMMARY;
+      if (!summary) return `<p class="panel-subtitle">暂未匹配到班级汇总数据。</p>`;
       return `
         <div class="class-context">
-          <div class="context-stat"><strong>${fmt(CLASS_SUMMARY.students, 0)}</strong><span>班级参考人数</span></div>
-          <div class="context-stat"><strong>${fmt(CLASS_SUMMARY.average)}</strong><span>零诊班级平均分</span></div>
-          <div class="context-stat"><strong>${fmt(CLASS_SUMMARY.controlCount, 0)}</strong><span>特控上线人数</span></div>
-          <div class="context-stat"><strong>${fmt(CLASS_SUMMARY.bachelorCount, 0)}</strong><span>本科上线人数</span></div>
+          <div class="context-stat"><strong>${fmt(summary.students, 0)}</strong><span>班级参考人数</span></div>
+          <div class="context-stat"><strong>${fmt(summary.average)}</strong><span>本次班级平均分</span></div>
+          <div class="context-stat"><strong>${fmt(summary.controlCount, 0)}</strong><span>特控上线人数</span></div>
+          <div class="context-stat"><strong>${fmt(summary.bachelorCount, 0)}</strong><span>本科上线人数</span></div>
         </div>`;
     }
 
     function renderReport(student) {
       const current = student.current;
+      const currentExamName = student.currentExam?.examName || "高二下零诊";
       const overall = statusFor(current.controlDiff, current.bachelorDiff);
       const insights = createInsights(student);
       const trendButtons = [{ key: "total", name: "总分" }, ...SUBJECTS].map((subject, index) =>
         `<button class="trend-tab ${index === 0 ? "active" : ""}" type="button" data-trend="${subject.key}">${subject.name}</button>`
       ).join("");
-      const examCards = student.exams.map((exam) => `
+      const examCards = (student.exams || []).map((exam) => `
         <div class="exam-card"><strong>${fmt(exam.total)}</strong><span>${escapeHtml(EXAM_SHORT[exam.name] || exam.name)}</span></div>`
       ).join("") || `<div class="exam-card"><strong>—</strong><span>暂无记录</span></div>`;
       const rankingHtml = rankTimeline(student) || `<p class="panel-subtitle">暂无可展示的历次排名记录。</p>`;
 
       reportShell.innerHTML = `
         <nav class="report-nav">
-          <div class="report-brand"><span class="brand-seal">荣</span><span>零诊成绩报告</span></div>
+          <div class="report-brand"><span class="brand-seal">荣</span><span>${escapeHtml(currentExamName)} · 成绩报告</span></div>
           <button class="ghost-btn" type="button" id="backButton">返回查询</button>
         </nav>
 
         <header class="hero fade-in">
           <div class="student-meta">
-            <p class="eyebrow">高二下零诊 · 个人成绩概览</p>
+            <p class="eyebrow">${escapeHtml(currentExamName)} · 个人成绩概览</p>
             <h1 class="student-name">${escapeHtml(student.name)}</h1>
             <span class="class-tag">${escapeHtml(student.className)}</span>
             <div class="score-line"><strong class="score-number">${fmt(current.totalScore)}</strong><span class="score-unit">总分</span></div>
@@ -761,7 +815,7 @@
             <div><h2 class="panel-title">阶段成绩变化</h2><p class="panel-subtitle">选择科目查看六次考试的分数走势</p></div>
             <div class="trend-tabs">${trendButtons}</div>
           </div>
-          <div class="chart-wrap"><canvas id="trendCanvas" aria-label="历次成绩折线图"></canvas><div class="chart-empty" id="chartEmpty" hidden>历次数据不足，暂不绘制趋势线</div></div>
+          <div class="chart-wrap"><canvas id="trendCanvas" role="img" aria-label="历次成绩折线图"></canvas><div class="chart-tooltip" id="chartTooltip" hidden></div><div class="chart-empty" id="chartEmpty" hidden>历次数据不足，暂不绘制趋势线</div></div>
           <div class="exam-strip">${examCards}</div>
         </section>
 
@@ -777,11 +831,11 @@
           </details>
           <details class="panel fade-in">
             <summary><div><h2 class="panel-title">班级参考</h2><p class="panel-subtitle">只提供整体数据，辅助理解本次考试</p></div><span class="summary-sign">＋</span></summary>
-            <div class="detail-body">${classContext()}</div>
+            <div class="detail-body">${classContext(student)}</div>
           </details>
         </div>
 
-        <p class="source-note">数据来自文件夹内6份原始 Excel：身份信息、班级划线、班级上线人数对比、年级成绩、多次考试分析及小题知识点数据。<br>排名范围不同，请结合“市排名 / 校排名 / 班级排名”标签阅读。</p>`;
+        <p class="source-note">数据版本 ${escapeHtml(activeDataMeta.dataVersion || "legacy")} · 生成于 ${escapeHtml(activeDataMeta.generatedAt || "—")}。<br>排名范围不同，请结合“市排名 / 校排名 / 班级排名”标签阅读。</p>`;
 
       queryView.hidden = true;
       reportView.hidden = false;
@@ -794,6 +848,7 @@
           drawTrend(student, button.dataset.trend);
         });
       });
+      bindChartInteractions(student);
       requestAnimationFrame(() => {
         try { drawTrend(student, "total"); }
         catch (error) { console.error(error); }
@@ -822,12 +877,55 @@
       nameInput.focus();
     }
 
+    function bindChartInteractions(student) {
+      const canvas = document.getElementById("trendCanvas");
+      const tooltip = document.getElementById("chartTooltip");
+      if (!canvas || !tooltip) return;
+      const showTooltip = (event) => {
+        const chartState = canvas.__chartState;
+        if (!chartState?.entries?.length || chartState.entries.length < 2) return;
+        const rect = canvas.getBoundingClientRect();
+        const localX = Math.max(0, Math.min(rect.width, event.clientX - rect.left));
+        let nearest = 0;
+        let distance = Infinity;
+        chartState.xValues.forEach((x, index) => {
+          const next = Math.abs(x - localX);
+          if (next < distance) { distance = next; nearest = index; }
+        });
+        const entry = chartState.entries[nearest];
+        tooltip.innerHTML = `<b>${escapeHtml(entry.label)}</b><span>${escapeHtml(chartState.subjectName)}：${fmt(entry.value)} 分</span>`;
+        tooltip.hidden = false;
+        const wrap = canvas.parentElement;
+        const tooltipWidth = tooltip.offsetWidth || 130;
+        const left = Math.max(8, Math.min(wrap.clientWidth - tooltipWidth - 8, localX + 12));
+        tooltip.style.left = `${left}px`;
+        tooltip.style.top = "10px";
+      };
+      const hideTooltip = () => { tooltip.hidden = true; };
+      canvas.addEventListener("pointermove", showTooltip);
+      canvas.addEventListener("pointerdown", showTooltip);
+      canvas.addEventListener("pointerleave", hideTooltip);
+      canvas.addEventListener("pointercancel", hideTooltip);
+      canvas.addEventListener("keydown", (event) => {
+        if (!["ArrowLeft", "ArrowRight"].includes(event.key)) return;
+        const chartState = canvas.__chartState;
+        if (!chartState?.entries?.length) return;
+        const current = Number(canvas.dataset.activePoint || 0);
+        const next = Math.max(0, Math.min(chartState.entries.length - 1, current + (event.key === "ArrowRight" ? 1 : -1)));
+        canvas.dataset.activePoint = next;
+        const rect = canvas.getBoundingClientRect();
+        showTooltip({ clientX: rect.left + chartState.xValues[next], clientY: rect.top + 20 });
+      });
+      canvas.tabIndex = 0;
+      canvas.dataset.activePoint = "0";
+    }
+
     function drawTrend(student, key) {
       const canvas = document.getElementById("trendCanvas");
       const empty = document.getElementById("chartEmpty");
       if (!canvas) return;
-      const entries = student.exams
-        .map((exam) => ({ label: EXAM_SHORT[exam.name] || exam.name, value: number(exam.scores[key]) }))
+      const entries = (student.exams || [])
+        .map((exam) => ({ label: EXAM_SHORT[exam.name] || exam.name, value: number(exam.scores?.[key]) }))
         .filter((entry) => entry.value != null);
       const rect = canvas.getBoundingClientRect();
       const width = Math.max(320, rect.width || 800);
@@ -839,6 +937,7 @@
       ctx.scale(ratio, ratio);
       ctx.clearRect(0, 0, width, height);
       if (entries.length < 2) {
+        canvas.__chartState = { entries: [] };
         canvas.style.visibility = "hidden";
         if (empty) empty.hidden = false;
         return;
@@ -857,6 +956,7 @@
       const plotH = height - pad.top - pad.bottom;
       const x = (index) => pad.left + (plotW * index) / Math.max(1, entries.length - 1);
       const y = (value) => pad.top + ((max - value) / (max - min)) * plotH;
+      canvas.__chartState = { entries, xValues: entries.map((entry, index) => x(index)), subjectName: key === "total" ? "总分" : (SUBJECTS.find((subject) => subject.key === key)?.name || key) };
 
       ctx.lineWidth = 1;
       ctx.strokeStyle = "rgba(31, 69, 78, .10)";

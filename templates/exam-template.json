@@ -1,0 +1,69 @@
+{
+  "kind": "exam-input",
+  "schemaVersion": 2,
+  "exam": {
+    "examId": "2026-zero-demo",
+    "examName": "高二下零诊（示例）",
+    "examDate": "2026-07-16",
+    "scope": "city",
+    "className": "高二4班",
+    "controlLine": 430,
+    "bachelorLine": 320,
+    "note": "请删除示例学生后填写本次考试数据"
+  },
+  "subjects": [
+    { "key": "chinese", "name": "语文", "max": 150 },
+    { "key": "math", "name": "数学", "max": 150 },
+    { "key": "english", "name": "英语", "max": 150 },
+    { "key": "physics", "name": "物理", "max": 100 },
+    { "key": "chemistry", "name": "化学", "max": 100 },
+    { "key": "biology", "name": "生物", "max": 100 }
+  ],
+  "cutoffs": {
+    "chinese": { "controlLine": null, "bachelorLine": null },
+    "math": { "controlLine": null, "bachelorLine": null },
+    "english": { "controlLine": null, "bachelorLine": null },
+    "physics": { "controlLine": null, "bachelorLine": null },
+    "chemistry": { "controlLine": null, "bachelorLine": null },
+    "biology": { "controlLine": null, "bachelorLine": null }
+  },
+  "students": [
+    {
+      "studentId": "TEST0001",
+      "name": "示例学生甲",
+      "className": "高二4班",
+      "totalScore": 468,
+      "cityRank": 120,
+      "schoolRank": 8,
+      "classRank": 1,
+      "subjects": {
+        "chinese": { "score": 112, "rank": 3 },
+        "math": { "score": 126, "rank": 1 },
+        "english": { "score": 108, "rank": 5 },
+        "physics": { "score": 58, "rank": 2 },
+        "chemistry": { "score": 32, "rank": 4 },
+        "biology": { "score": 32, "rank": 6 }
+      }
+    },
+    {
+      "studentId": "TEST0002",
+      "name": "示例学生乙",
+      "className": "高二4班",
+      "totalScore": null,
+      "cityRank": null,
+      "schoolRank": 19,
+      "classRank": 2,
+      "subjects": {
+        "chinese": { "score": 98, "rank": null },
+        "math": { "score": 0, "rank": null },
+        "english": { "score": 101, "rank": null },
+        "physics": { "score": 46, "rank": null },
+        "chemistry": { "score": 29, "rank": null },
+        "biology": { "score": 27, "rank": null }
+      }
+    }
+  ],
+  "knowledge": [
+    { "studentId": "TEST0001", "subjectKey": "math", "knowledge": "函数单调性", "question": "第12题", "loss": 6 }
+  ]
+}

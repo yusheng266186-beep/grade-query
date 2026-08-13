@@ -1,0 +1,170 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <meta name="robots" content="noindex,nofollow,noarchive">
+  <meta name="description" content="成绩查询发布工作台：导入考试模板，校验、归档并生成前端加密发布包。">
+  <title>成绩发布工作台</title>
+  <link rel="stylesheet" href="publisher.css">
+</head>
+<body>
+  <div class="app-shell">
+    <header class="app-header">
+      <div class="brand-lockup">
+        <span class="brand-mark">成</span>
+        <div>
+          <p class="brand-eyebrow">GRADE QUERY · PUBLISHER</p>
+          <h1>成绩发布工作台</h1>
+        </div>
+      </div>
+      <span class="schema-badge">数据格式 v2</span>
+    </header>
+
+    <main>
+      <section class="intro-card">
+        <div>
+          <p class="section-kicker">一份模板，一次发布</p>
+          <h2>把考试数据变成<br><em>可查询的个人报告</em></h2>
+          <p class="intro-copy">在本机导入 Excel、CSV 或 JSON 模板。工作台会先归一化空值、检查字段和分数范围，再把每位学生的报告用浏览器端 AES-GCM 加密，生成可放进 GitHub Pages 的发布包。</p>
+        </div>
+        <div class="intro-orbit" aria-hidden="true">
+          <span class="orbit orbit-a"></span><span class="orbit orbit-b"></span><span class="orbit-core">02</span>
+        </div>
+      </section>
+
+      <nav class="step-nav" aria-label="发布流程">
+        <a class="step active" href="#step-import"><span>01</span><b>导入模板</b><small>Excel / CSV / JSON</small></a>
+        <i></i>
+        <a class="step" href="#step-review"><span>02</span><b>校验与合并</b><small>空值 · 字段 · 版本</small></a>
+        <i></i>
+        <a class="step" href="#step-export"><span>03</span><b>生成发布包</b><small>加密 · 下载 · 发布</small></a>
+      </nav>
+
+      <section class="workspace-grid">
+        <div class="main-column">
+          <section class="panel" id="step-import">
+            <div class="panel-heading">
+              <div><p class="section-kicker">STEP 01</p><h2>导入本次考试</h2></div>
+              <span class="panel-state" id="importState">等待文件</span>
+            </div>
+            <div class="drop-zone" id="examDropZone" tabindex="0" role="button" aria-label="选择考试模板文件">
+              <input id="examFile" type="file" accept=".xlsx,.xls,.csv,.json,application/json,text/csv,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" hidden>
+              <div class="drop-icon">↥</div>
+              <strong>拖入本次考试模板</strong>
+              <span>支持 .xlsx、.csv、.json；也可以点击选择</span>
+              <button class="button button-secondary" id="chooseExamButton" type="button">选择考试文件</button>
+            </div>
+            <div class="file-row" id="examFileRow" hidden>
+              <span class="file-icon">DOC</span><div><b id="examFileName">—</b><small id="examFileInfo">—</small></div><button class="icon-button" id="clearExamButton" type="button" aria-label="移除考试文件">×</button>
+            </div>
+            <div class="template-actions">
+              <a class="text-action" href="templates/exam-template.xlsx" download>↓ 下载 Excel 模板</a>
+              <a class="text-action" href="templates/exam-template.json" download>↓ 下载 JSON 模板</a>
+              <a class="text-action" href="templates/exam-template.csv" download>↓ 下载 CSV 模板</a>
+            </div>
+          </section>
+
+          <section class="panel" id="step-review">
+            <div class="panel-heading">
+              <div><p class="section-kicker">STEP 02</p><h2>校验与合并历史</h2></div>
+              <span class="panel-state muted" id="reviewState">尚未导入</span>
+            </div>
+            <div class="backup-box">
+              <div class="backup-copy"><span class="mini-label">可选 · 继续累计历次考试</span><b>导入上一次项目备份</b><small>首次发布无需选择。生成后请把“项目备份”保存在本地，下次考试继续导入。</small></div>
+              <label class="button button-secondary file-button" for="projectFile">选择项目备份<input id="projectFile" type="file" accept=".json,application/json" hidden></label>
+            </div>
+            <div class="project-file-row" id="projectFileRow" hidden><span class="status-dot"></span><span id="projectFileName">—</span><button class="icon-button" id="clearProjectButton" type="button" aria-label="移除项目备份">×</button></div>
+
+            <div class="metadata-grid" id="metadataForm" hidden>
+              <label><span>考试名称</span><input id="metaExamName" type="text" maxlength="40" placeholder="例如：高二下零诊"></label>
+              <label><span>考试编号</span><input id="metaExamId" type="text" maxlength="50" placeholder="例如：2026-zero"></label>
+              <label><span>考试日期</span><input id="metaExamDate" type="date"></label>
+              <label><span>排名范围</span><select id="metaScope"><option value="city">全市排名</option><option value="school">校内排名</option><option value="class">班级排名</option></select></label>
+              <label><span>班级名称</span><input id="metaClassName" type="text" maxlength="30" placeholder="例如：高二4班"></label>
+              <label><span>特控线</span><input id="metaControlLine" inputmode="decimal" type="text" placeholder="可留空"></label>
+              <label><span>本科线</span><input id="metaBachelorLine" inputmode="decimal" type="text" placeholder="可留空"></label>
+              <label class="wide"><span>本次备注</span><input id="metaNote" type="text" maxlength="100" placeholder="可留空，例如：物理类"></label>
+            </div>
+
+            <div class="validation-summary" id="validationSummary" hidden>
+              <div class="summary-stat"><strong id="studentCount">0</strong><span>学生记录</span></div>
+              <div class="summary-stat"><strong id="validCount">0</strong><span>可发布</span></div>
+              <div class="summary-stat warning"><strong id="warningCount">0</strong><span>提醒</span></div>
+              <div class="summary-stat danger"><strong id="errorCount">0</strong><span>错误</span></div>
+            </div>
+            <div class="message-stack" id="messageStack" hidden></div>
+            <div class="preview-wrap" id="previewWrap" hidden>
+              <div class="preview-heading"><b>数据预览</b><span id="previewCaption">—</span></div>
+              <div class="table-scroll"><table id="previewTable"><thead><tr><th>姓名</th><th>学号 / 查询识别码</th><th>总分</th><th>排名</th><th>状态</th></tr></thead><tbody></tbody></table></div>
+            </div>
+          </section>
+
+          <section class="panel" id="step-export">
+            <div class="panel-heading">
+              <div><p class="section-kicker">STEP 03</p><h2>生成发布包</h2></div>
+              <span class="panel-state muted" id="exportState">等待校验通过</span>
+            </div>
+            <div class="export-card">
+              <div class="export-card-art" aria-hidden="true"><span>ENCRYPT</span><b>V2</b></div>
+              <div class="export-copy"><b>浏览器端加密发布包</b><p>每位学生独立生成随机盐和 IV，报告数据不会以明文写入发布包。发布包只包含查询页需要的加密记录。</p><span id="exportEstimate">导入并通过校验后可生成</span></div>
+            </div>
+            <div class="export-actions">
+              <button class="button button-primary" id="generateButton" type="button" disabled>生成加密发布包</button>
+              <button class="button button-secondary" id="backupButton" type="button" disabled>下载项目备份</button>
+            </div>
+            <div class="download-panel" id="downloadPanel" hidden>
+              <div class="success-mark">✓</div><div><b>发布包已生成</b><p id="downloadSummary">—</p></div>
+              <div class="download-links"><a id="downloadZip" class="button button-primary" href="#" download hidden>下载 ZIP 发布包</a><a id="downloadBundle" class="button button-secondary" href="#" download>下载加密数据</a><a id="downloadVersion" class="button button-secondary" href="#" download>下载版本信息</a></div>
+            </div>
+            <div class="github-upload" id="githubUploadPanel">
+              <div class="upload-heading"><div><span class="mini-label">OPTIONAL · ONE CLICK</span><b>直接发布到 GitHub Pages</b></div><span class="upload-lock">TOKEN 仅当前页面</span></div>
+              <p>需要一个只允许修改此仓库内容的 Fine-grained Token。网页会直接把两个加密数据文件提交到 GitHub，上传完成后自动给出 Pages 地址。</p>
+              <div class="github-fields">
+                <label><span>仓库</span><input id="githubRepo" type="text" value="yusheng266186-beep/grade-query" autocomplete="off" spellcheck="false"></label>
+                <label><span>分支</span><input id="githubBranch" type="text" value="main" autocomplete="off" spellcheck="false"></label>
+                <label class="token-field"><span>Fine-grained Token</span><input id="githubToken" type="password" placeholder="github_pat_…" autocomplete="off" spellcheck="false"></label>
+              </div>
+              <div class="upload-actions"><button class="button button-primary" id="uploadButton" type="button" disabled>一键上传并发布</button><span class="upload-status" id="uploadStatus" role="status" aria-live="polite">生成加密发布包后可上传</span></div>
+              <div class="pages-result" id="pagesResult" hidden><span class="success-mark">↗</span><div><b>Pages 正在更新</b><p id="pagesResultText">—</p><a id="pagesLink" href="#" target="_blank" rel="noreferrer">打开成绩查询页面 ↗</a></div></div>
+              <details class="token-help"><summary>Token 需要什么权限？</summary><p>创建 Fine-grained Token 时，将 Repository access 限定为 <code>yusheng266186-beep/grade-query</code>，Repository permissions 只开启 <b>Contents: Read and write</b>。如果仓库启用了严格的 Pages 管理权限，再额外开启 Pages: Read；本工作台不会把 Token 保存到仓库。</p></details>
+            </div>
+            <div class="publish-note"><b>如何发布到 GitHub Pages</b><span>把 ZIP 内的 <code>data/grade-data.v2.json</code> 和 <code>data/version.json</code> 上传到仓库同名目录；查询页无需重新生成。每次更新时覆盖这两个文件即可。</span></div>
+          </section>
+        </div>
+
+        <aside class="side-column">
+          <section class="side-card accent-card">
+            <span class="mini-label">数据状态</span>
+            <div class="big-status" id="sideStatus">未开始</div>
+            <p id="sideStatusCopy">先下载模板，填入本次考试数据后导入。</p>
+            <div class="progress-track"><i id="progressBar"></i></div>
+            <div class="progress-labels"><span>模板</span><span>校验</span><span>加密</span></div>
+          </section>
+          <section class="side-card">
+            <div class="side-heading"><span class="mini-label">字段规则</span><span class="rule-version">v2</span></div>
+            <ul class="rule-list">
+              <li><i>01</i><span><b>空白自动归一化</b>空白、—、无会转为缺失值；0 会保留为有效分数。</span></li>
+              <li><i>02</i><span><b>总分可自动计算</b>总分留空时，按已填写科目分数合计。</span></li>
+              <li><i>03</i><span><b>身份证号只做查询凭证</b>发布包中不存明文身份信息。</span></li>
+              <li><i>04</i><span><b>同一编号覆盖更新</b>重复考试编号会替换旧记录，避免历史重复。</span></li>
+            </ul>
+          </section>
+          <section class="side-card help-card">
+            <span class="mini-label">需要帮助？</span>
+            <b>先看输入格式说明</b>
+            <p>模板的“填写说明”页包含字段含义、排名范围、科目线和知识点失分的填写示例。</p>
+            <a href="docs/INPUT_FORMAT.md" target="_blank" rel="noreferrer">打开格式说明 ↗</a>
+          </section>
+        </aside>
+      </section>
+    </main>
+    <footer class="app-footer"><span>本工作台只在当前浏览器处理原始数据</span><span>GRADE QUERY / STATIC PUBLISH FLOW</span></footer>
+  </div>
+
+  <div class="toast" id="toast" role="status" aria-live="polite"></div>
+  <script src="vendor/xlsx.full.min.js"></script>
+  <script src="vendor/jszip.min.js"></script>
+  <script src="publisher.js" defer></script>
+</body>
+</html>
