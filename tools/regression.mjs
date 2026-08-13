@@ -131,6 +131,7 @@ assert.equal(mergePreview.missingStudentCount, 1);
 publisher.renderReview();
 assert.match(publisherDom.get("messageStack").innerHTML, /历史学生/);
 assert.match(publisherDom.get("messageStack").innerHTML, /姓名不同/);
+assert.equal(publisherDom.get("exportEstimate").textContent, "将为合并后的 2 位学生生成独立加密记录");
 
 const mergedProject = publisher.currentProject();
 assert.equal(mergedProject.exams.length, 2);

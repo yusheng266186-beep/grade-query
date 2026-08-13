@@ -839,7 +839,9 @@ function renderReview() {
   $("exportState").className = `panel-state ${valid ? "" : "muted"}`;
   $("generateButton").disabled = !valid;
   $("backupButton").disabled = !valid;
-  $("exportEstimate").textContent = valid ? `将为 ${result.validStudents} 位学生生成独立加密记录` : "导入并通过校验后可生成";
+  let publishStudentCount = result.validStudents;
+  if (valid && state.project) publishStudentCount = mergeExamIntoProject(state.project, state.exam).students.length;
+  $("exportEstimate").textContent = valid ? `将为合并后的 ${publishStudentCount} 位学生生成独立加密记录` : "导入并通过校验后可生成";
   $("sideStatus").textContent = valid ? "待加密" : "待校验";
   $("sideStatusCopy").textContent = valid ? "数据已准备好，可以生成发布包。" : result.errors.length ? "请先处理下方错误，再进入加密。" : "模板已经导入，正在等待检查。";
   $("progressBar").style.width = valid ? "64%" : "34%";
