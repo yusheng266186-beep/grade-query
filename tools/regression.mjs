@@ -65,6 +65,7 @@ function baseSandbox(document, fetchImpl = async () => ({ ok: false, text: async
     structuredClone,
   };
   sandbox.window = sandbox;
+  sandbox.addEventListener = () => {};
   sandbox.scrollTo = () => {};
   return sandbox;
 }
@@ -92,6 +93,24 @@ cleanInput.knowledge[0].studentId = "S24001";
 const firstExam = publisher.normalizeExam(cleanInput);
 assert.equal(publisher.validateExam(firstExam).errors.length, 0);
 
+const invalidInput = structuredClone(cleanInput);
+invalidInput.exam.examDate = "2026-02-31";
+invalidInput.exam.scope = "schol";
+invalidInput.students[0].totalScore = "五百";
+invalidInput.students[0].cityRank = 1.5;
+invalidInput.students[0].subjects.math.rank = "第一";
+invalidInput.knowledge.push({ studentId: "NOT-IN-ROSTER", subjectKey: "history", knowledge: "示例", question: "1", loss: -2 });
+const invalidExam = publisher.normalizeExam(invalidInput);
+const invalidErrors = publisher.validateExam(invalidExam).errors.join("\n");
+assert.match(invalidErrors, /不是有效日期/);
+assert.match(invalidErrors, /排名范围.*无法识别/);
+assert.match(invalidErrors, /总分.*不是有效数字/);
+assert.match(invalidErrors, /全市排名必须是正整数/);
+assert.match(invalidErrors, /数学排名.*不是有效数字/);
+assert.match(invalidErrors, /不在本次学生成绩中/);
+assert.match(invalidErrors, /科目“history”无法识别/);
+assert.match(invalidErrors, /失分不能为负数/);
+
 publisher.state.exam = firstExam;
 publisher.state.project = null;
 const firstProject = publisher.currentProject();
@@ -118,6 +137,22 @@ assert.equal(mergedProject.exams.length, 2);
 assert.equal(mergedProject.students.length, 2);
 assert.equal(mergedProject.students.find((student) => student.studentId === "S24002").exams.length, 1);
 
+const oldInput = structuredClone(cleanInput);
+oldInput.exam = { ...oldInput.exam, examId: "2026-old", examName: "较早考试", examDate: "2026-03-01" };
+oldInput.students = [{ ...oldInput.students[0], totalScore: 430 }];
+oldInput.knowledge = [];
+const withOlderExam = publisher.mergeExamIntoProject(mergedProject, publisher.normalizeExam(oldInput));
+assert.equal(withOlderExam.students.find((student) => student.studentId === "S24001").currentExamId, "2026-mid", "补录较早考试不能覆盖学生当前成绩");
+assert.equal(withOlderExam.meta.latestExam, "期中测试", "补录较早考试不能改写项目最新考试");
+
+const replacementInput = structuredClone(cleanInput);
+replacementInput.students = [{ ...replacementInput.students[0], totalScore: 471 }];
+replacementInput.knowledge = [];
+const replacedProject = publisher.mergeExamIntoProject(firstProject, publisher.normalizeExam(replacementInput));
+assert.equal(replacedProject.exams.length, 1);
+assert.equal(replacedProject.students.length, 1, "覆盖同编号时，已从该场考试移除且没有其他历史的学生不应残留");
+assert.equal(replacedProject.students[0].current.totalScore, 471);
+
 const release = await publisher.buildEncryptedBundle(mergedProject);
 assert.equal(release.bundle.recordCount, 2);
 assert.equal(release.bundle.studentCount, 2);
@@ -131,7 +166,8 @@ let blobIndex = 0;
 publisherSandbox.fetch = async (url, options = {}) => {
   const method = options.method || "GET";
   let body;
-  if (url.includes("/git/ref/heads/")) body = { object: { sha: "head-sha" } };
+  if (String(url).startsWith("https://example.github.io/grade-query/data/version.json")) body = release.version;
+  else if (url.includes("/git/ref/heads/")) body = { object: { sha: "head-sha" } };
   else if (url.endsWith("/git/commits/head-sha")) body = { tree: { sha: "base-tree" } };
   else if (url.endsWith("/git/blobs") && method === "POST") body = { sha: `blob-${++blobIndex}` };
   else if (url.endsWith("/git/trees") && method === "POST") body = { sha: "release-tree" };
@@ -140,13 +176,20 @@ publisherSandbox.fetch = async (url, options = {}) => {
   else if (url.includes("/contents/data/version.json")) body = { content: Buffer.from(JSON.stringify(release.version)).toString("base64") };
   else if (url.endsWith("/pages")) body = { html_url: "https://example.github.io/grade-query/" };
   else return { ok: false, status: 404, text: async () => JSON.stringify({ message: "unhandled mock route" }) };
-  return { ok: true, status: 200, text: async () => JSON.stringify(body) };
+  return { ok: true, status: 200, text: async () => JSON.stringify(body), json: async () => body };
 };
 await publisher.uploadRelease();
 assert.equal(blobIndex, 2);
-assert.match(publisherDom.get("uploadStatus").textContent, /上传成功/);
+assert.match(publisherDom.get("uploadStatus").textContent, /发布完成/);
 assert.equal(publisherDom.get("githubToken").value, "");
-assert.equal(publisherDom.get("pagesLink").href, "https://example.github.io/grade-query/");
+assert.match(publisherDom.get("pagesLink").href, /^https:\/\/example\.github\.io\/grade-query\/\?v=/);
+assert.equal(publisherDom.get("pagesResultTitle").textContent, "发布完成，可以查询");
+
+const publisherHtml = fs.readFileSync(new URL("../publisher.html", import.meta.url), "utf8");
+const publisherIds = [...publisherSource.matchAll(/\$\("([^"]+)"\)/g)].map((match) => match[1]);
+for (const id of new Set(publisherIds)) assert.match(publisherHtml, new RegExp(`id=["']${id}["']`), `publisher.html 缺少脚本需要的 #${id}`);
+assert.match(publisherHtml, /publisher\.js\?v=/, "发布工作台静态资源必须带缓存版本号");
+assert.match(publisherHtml, /guide\.html\?v=/, "输入格式说明应打开适合普通用户阅读的页面");
 
 const html = fs.readFileSync(new URL("../index.html", import.meta.url), "utf8");
 const querySource = html.match(/<script>([\s\S]*?)<\/script>/)?.[1];
@@ -180,6 +223,10 @@ assert.equal(decrypted.exams.length, 2);
 assert.doesNotMatch(goodHarness.query.createInsights(decrypted).map((item) => item.text).join("\n"), /零诊|六次/);
 assert.match(goodHarness.query.rankTimeline(decrypted), /第一次月考/);
 
+const legacyHarness = makeQueryHarness(null);
+await Promise.resolve();
+assert.equal(legacyHarness.dom.get("queryTitle").textContent, "高二下零诊成绩报告", "没有 v2 版本文件时仍应显示现有旧版考试标题");
+
 const badVersion = structuredClone(release.version);
 badVersion.bundleSha256 = "0".repeat(64);
 const badHarness = makeQueryHarness(badVersion);
@@ -187,4 +234,4 @@ await assert.rejects(() => badHarness.query.loadDataBundle(), (error) => error?.
 badVersion.bundleSha256 = release.version.bundleSha256;
 assert.equal((await badHarness.query.loadDataBundle()).recordCount, 2, "版本同步后应允许重试");
 
-console.log("Regression checks passed: template guard, merge, encryption, GitHub upload, dynamic metadata, decryption, integrity retry.");
+console.log("Regression checks passed: strict validation, template guard, true replacement merge, chronology, encryption, GitHub upload, cache busting, dynamic metadata, decryption, integrity retry.");

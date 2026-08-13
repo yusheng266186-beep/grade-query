@@ -40,7 +40,7 @@ info.getRange("A6:C10").values = [
   ["科目分数线", "填写科目满分及可选的科目线差", "建议"],
   ["学生成绩", "每行一名学生，姓名和学号/查询识别码必填", "是"],
   ["知识点失分", "可选，每行一条主要失分知识点", "否"],
-  ["发布流程", "导入 → 校验 → 导入项目备份 → 生成加密发布包 → 上传", "—"],
+  ["发布流程", "导入项目备份（第二次起） → 导入本次模板 → 校验 → 生成加密发布包 → 上传", "—"],
 ];
 body(info, "A6:C10");
 info.getRange("A12:F16").merge(true);
@@ -49,10 +49,9 @@ info.getRange("A12:A16").values = [
   ["总分留空时，系统会按已填写科目分数合计；总分与科目合计不一致时只提醒，不擅自修改。"],
   ["第一次生成后下载 grade-project-*.json；下次考试先导入这份项目备份，再导入新模板即可累计历史数据。"],
   ["项目备份是明文工作文件，仅保存到本地；发布包中的学生报告会在浏览器端逐条 AES-GCM 加密。"],
-  ["建议先使用 TEST0001 等示例记录验证流程，再替换为真实数据。"],
+  ["TEST0001 等示例行只用于说明格式；正式导入时必须删除或完全替换，否则工作台会阻止发布。"],
 ];
 info.getRange("A12:F16").format = { font: { color: muted, size: 10 }, wrapText: true, verticalAlignment: "center" };
-info.getRange("A1:F16").format.columnWidth = 20;
 info.getRange("A1:F16").format.columnWidth = 20;
 info.getRange("A:A").format.columnWidth = 18;
 info.getRange("B:B").format.columnWidth = 58;
@@ -76,6 +75,9 @@ exam.getRange("A4:C11").values = [
 ];
 body(exam, "A4:C11");
 exam.getRange("B9:B10").format.numberFormat = "0.0";
+exam.getRange("B4:B8").format.numberFormat = "@";
+exam.getRange("B11").format.numberFormat = "@";
+exam.getRange("B7").dataValidation = { rule: { type: "list", values: ["city", "school", "class"] } };
 exam.getRange("A:A").format.columnWidth = 18; exam.getRange("B:B").format.columnWidth = 28; exam.getRange("C:C").format.columnWidth = 48;
 exam.freezePanes.freezeRows(3);
 
@@ -107,9 +109,13 @@ students.getRange("A4:T5").values = [
   ["TEST0002", "示例学生乙", "高二4班", "", "", 19, 2, 98, "", 0, "", 101, "", 46, "", 29, "", 27, "", "总分留空会自动计算"],
 ];
 body(students, "A4:T5");
-students.getRange("D4:T200").format.numberFormat = "0.0";
+students.getRange("A4:A104").format.numberFormat = "@";
+students.getRange("D4:D104").format.numberFormat = "0.0";
+for (const column of ["H", "J", "L", "N", "P", "R"]) students.getRange(`${column}4:${column}104`).format.numberFormat = "0.0";
+for (const column of ["E", "F", "G", "I", "K", "M", "O", "Q", "S"]) students.getRange(`${column}4:${column}104`).format.numberFormat = "0";
 students.getRange("A:A").format.columnWidth = 18; students.getRange("B:B").format.columnWidth = 16; students.getRange("C:C").format.columnWidth = 14; students.getRange("D:S").format.columnWidth = 12; students.getRange("T:T").format.columnWidth = 28;
 students.freezePanes.freezeRows(3);
+students.freezePanes.freezeColumns(3);
 students.tables.add("A3:T5", true, "StudentScores");
 
 const knowledge = workbook.worksheets.add("知识点失分");
@@ -119,6 +125,9 @@ knowledge.getRange("A3:E3").values = [["学号", "科目键", "知识点", "题�
 header(knowledge, "A3:E3");
 knowledge.getRange("A4:E4").values = [["TEST0001", "math", "函数单调性", "第12题", 6]];
 body(knowledge, "A4:E4");
+knowledge.getRange("A4:A104").format.numberFormat = "@";
+knowledge.getRange("B4:B104").dataValidation = { rule: { type: "list", values: ["chinese", "math", "english", "physics", "chemistry", "biology"] } };
+knowledge.getRange("E4:E104").format.numberFormat = "0.0";
 knowledge.getRange("A:A").format.columnWidth = 18; knowledge.getRange("B:B").format.columnWidth = 16; knowledge.getRange("C:C").format.columnWidth = 28; knowledge.getRange("D:D").format.columnWidth = 16; knowledge.getRange("E:E").format.columnWidth = 12;
 knowledge.freezePanes.freezeRows(3);
 

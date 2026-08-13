@@ -1,0 +1,138 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <meta name="theme-color" content="#173c4b">
+  <meta name="robots" content="noindex,nofollow,noarchive">
+  <meta name="description" content="成绩发布工作台输入格式与发布流程说明。">
+  <title>成绩发布使用说明</title>
+  <style>
+    :root { --ink:#1d3037; --muted:#718189; --paper:#f3f1eb; --surface:#fffefa; --line:rgba(27,55,66,.13); --navy:#173c4b; --jade:#2f7168; --jade-soft:#e8f2ee; --gold:#bd8b48; --rose:#9c5757; }
+    * { box-sizing:border-box; }
+    html { scroll-behavior:smooth; }
+    body { margin:0; color:var(--ink); background:radial-gradient(circle at 95% 4%,rgba(47,113,104,.10),transparent 28rem),var(--paper); font-family:-apple-system,BlinkMacSystemFont,"PingFang SC","Microsoft YaHei",sans-serif; line-height:1.75; }
+    a { color:var(--jade); }
+    .shell { width:min(100% - 28px,980px); margin:0 auto; padding:22px 0 56px; }
+    nav { display:flex; align-items:center; justify-content:space-between; gap:14px; margin-bottom:18px; }
+    .brand { display:flex; align-items:center; gap:10px; color:var(--navy); font-weight:750; }
+    .seal { width:34px; height:34px; display:grid; place-items:center; border-radius:11px; color:#f2d7a6; background:var(--navy); }
+    .button { display:inline-flex; align-items:center; justify-content:center; min-height:40px; padding:0 14px; border-radius:11px; color:#fff; background:linear-gradient(135deg,var(--navy),var(--jade)); font-size:13px; font-weight:700; text-decoration:none; }
+    header { padding:clamp(28px,6vw,54px); border-radius:28px; color:#fff; background:linear-gradient(135deg,#102f3c,#205c5b); box-shadow:0 22px 60px rgba(25,48,57,.16); }
+    .kicker { margin:0; color:#e3c48c; font-size:11px; font-weight:750; letter-spacing:.22em; }
+    h1 { margin:12px 0 10px; font-size:clamp(30px,6vw,48px); line-height:1.15; }
+    header p:last-child { max-width:700px; margin:0; color:rgba(255,255,255,.68); font-size:14px; }
+    .steps { display:grid; grid-template-columns:repeat(4,1fr); gap:10px; margin:18px 0; }
+    .step { padding:16px; border:1px solid rgba(255,255,255,.8); border-radius:17px; background:rgba(255,255,255,.72); }
+    .step span { color:var(--gold); font-size:10px; font-weight:800; letter-spacing:.15em; }
+    .step b { display:block; margin-top:5px; font-size:13px; }
+    .step small { display:block; margin-top:4px; color:var(--muted); font-size:11px; line-height:1.55; }
+    section { margin-top:16px; padding:clamp(20px,4vw,32px); border:1px solid rgba(255,255,255,.85); border-radius:22px; background:rgba(255,255,255,.82); box-shadow:0 13px 42px rgba(25,48,57,.06); }
+    h2 { margin:0 0 14px; color:var(--navy); font-size:21px; }
+    h3 { margin:22px 0 8px; font-size:15px; }
+    p { margin:8px 0; }
+    ol,ul { margin:10px 0; padding-left:22px; }
+    li + li { margin-top:7px; }
+    .notice { padding:13px 15px; border-left:4px solid var(--gold); border-radius:0 11px 11px 0; color:#6c5838; background:#f8efdf; font-size:13px; }
+    .warning { border-left-color:var(--rose); color:#794d4d; background:#f7eae8; }
+    .table-wrap { overflow:auto; margin-top:10px; border:1px solid var(--line); border-radius:14px; }
+    table { width:100%; border-collapse:collapse; min-width:620px; background:var(--surface); }
+    th,td { padding:11px 13px; border-bottom:1px solid var(--line); text-align:left; vertical-align:top; font-size:12px; }
+    th { color:#557069; background:var(--jade-soft); }
+    tr:last-child td { border-bottom:0; }
+    code { padding:2px 5px; border-radius:5px; color:#476b64; background:#edf3ef; font-family:ui-monospace,SFMono-Regular,Menlo,monospace; font-size:.92em; }
+    .checklist { display:grid; grid-template-columns:1fr 1fr; gap:9px 20px; padding:0; list-style:none; }
+    .checklist li { position:relative; padding-left:25px; }
+    .checklist li::before { content:"✓"; position:absolute; left:0; top:1px; color:var(--jade); font-weight:800; }
+    footer { margin-top:20px; color:#8a9697; font-size:11px; text-align:center; }
+    @media (max-width:720px) { .steps { grid-template-columns:1fr 1fr; } .checklist { grid-template-columns:1fr; } }
+    @media (max-width:430px) { .shell { width:min(100% - 20px,980px); padding-top:12px; } nav { align-items:flex-start; } .brand span:last-child { display:none; } header { border-radius:22px; } .steps { grid-template-columns:1fr; } section { border-radius:18px; } }
+    @media print { body { background:#fff; } nav .button { display:none; } header,section { box-shadow:none; } }
+  </style>
+</head>
+<body>
+  <div class="shell">
+    <nav><div class="brand"><span class="seal">成</span><span>成绩发布使用说明</span></div><a class="button" href="publisher.html">返回发布工作台</a></nav>
+    <header>
+      <p class="kicker">GRADE QUERY · GUIDE</p>
+      <h1>填好一份模板，<br>完成一次安全发布</h1>
+      <p>优先使用 Excel 模板。工作台会在浏览器本机读取、校验、合并历史并加密，只有加密后的查询数据会上传到 GitHub。</p>
+    </header>
+
+    <div class="steps" aria-label="发布流程">
+      <div class="step"><span>01 · FILL</span><b>填写模板</b><small>删除示例学生，填本次考试数据。</small></div>
+      <div class="step"><span>02 · REVIEW</span><b>导入校验</b><small>按错误提示定位并修正原表。</small></div>
+      <div class="step"><span>03 · BACKUP</span><b>保存项目备份</b><small>供下次考试继续合并历史趋势。</small></div>
+      <div class="step"><span>04 · PUBLISH</span><b>一键发布</b><small>生成加密包并提交 GitHub Pages。</small></div>
+    </div>
+
+    <section>
+      <h2>每次考试怎么操作</h2>
+      <ol>
+        <li>在发布工作台下载 <b>Excel 模板</b>，不要修改四个工作表名称和第一行表头。</li>
+        <li>在“考试信息”“科目分数线”“学生成绩”中填写数据；“知识点失分”可不填。</li>
+        <li>删除模板里的 <code>TEST001</code>、<code>示例学生</code>等示例行，再保存 Excel。</li>
+        <li>从第二次考试开始，先选择上一次下载的 <code>grade-project-*.json</code>，再导入本次 Excel。</li>
+        <li>导入后先处理所有红色错误。黄色提醒不阻止发布，但应逐条确认。</li>
+        <li>点击“生成加密发布包”，随后点击“下载项目备份”并妥善保存。</li>
+        <li>输入 GitHub Fine-grained Token，点击“一键上传并发布”。页面显示“发布完成，可以查询”后，再把查询链接发给家长。</li>
+      </ol>
+      <p class="notice">同一个“考试编号”再次导入会整场覆盖旧记录，适合修正已发布的数据；新考试必须使用新的编号。</p>
+    </section>
+
+    <section>
+      <h2>Excel 四个工作表</h2>
+      <h3>1. 考试信息</h3>
+      <div class="table-wrap"><table><thead><tr><th>字段</th><th>是否必填</th><th>填写要求</th></tr></thead><tbody>
+        <tr><td>考试编号</td><td>是</td><td>唯一且稳定，例如 <code>2026-zero</code>；同编号表示覆盖。</td></tr>
+        <tr><td>考试名称</td><td>是</td><td>家长查询页中显示的名称。</td></tr>
+        <tr><td>考试日期</td><td>建议填写</td><td><code>YYYY-MM-DD</code>，例如 <code>2026-08-13</code>。</td></tr>
+        <tr><td>排名范围</td><td>建议填写</td><td><code>city</code> / 全市、<code>school</code> / 校内、<code>class</code> / 班级。</td></tr>
+        <tr><td>班级名称</td><td>是</td><td>例如“高二4班”。</td></tr>
+        <tr><td>特控线、本科线</td><td>否</td><td>本次总分线；留空时不显示对应线差。</td></tr>
+        <tr><td>备注</td><td>否</td><td>例如“物理类”。</td></tr>
+      </tbody></table></div>
+
+      <h3>2. 科目分数线</h3>
+      <p>科目键固定为 <code>chinese</code>、<code>math</code>、<code>english</code>、<code>physics</code>、<code>chemistry</code>、<code>biology</code>。满分必须大于 0；各科特控线、本科线可留空。</p>
+
+      <h3>3. 学生成绩</h3>
+      <div class="table-wrap"><table><thead><tr><th>字段</th><th>填写要求</th><th>空值处理</th></tr></thead><tbody>
+        <tr><td>学号 / 查询识别码</td><td>必填且不可重复；家长查询时使用。</td><td>不可留空。</td></tr>
+        <tr><td>姓名</td><td>必填；须与家长输入完全一致。</td><td>不可留空。</td></tr>
+        <tr><td>班级</td><td>可为学生单独填写。</td><td>留空时使用考试信息中的班级。</td></tr>
+        <tr><td>总分</td><td>应处于所有科目满分之和范围内。</td><td>留空时按已填写科目自动合计。</td></tr>
+        <tr><td>全市 / 校内 / 班级排名</td><td>只能填正整数。</td><td>没有该排名范围时留空。</td></tr>
+        <tr><td>各科分数</td><td>必须在 0 到该科满分之间。</td><td><code>0</code> 是有效分数；空白才是缺失。</td></tr>
+        <tr><td>各科排名</td><td>只能填正整数。</td><td>可留空。</td></tr>
+      </tbody></table></div>
+
+      <h3>4. 知识点失分（可选）</h3>
+      <p>每行填写“学号、科目键、知识点、题号、失分”。学号必须存在于本次学生成绩中，失分不能为负数；中文科目名也可自动识别。</p>
+    </section>
+
+    <section>
+      <h2>发布前最后检查</h2>
+      <ul class="checklist">
+        <li>示例学生已全部删除</li>
+        <li>错误数量为 0</li>
+        <li>考试编号没有误覆盖旧考试</li>
+        <li>缺席学生与新增学生数量符合预期</li>
+        <li>项目备份已下载到本机</li>
+        <li>Token 仅有目标仓库 Contents 读写权限</li>
+        <li>发布状态显示 Pages 已读取本次版本</li>
+        <li>用一位测试学生实际查询成功</li>
+      </ul>
+      <p class="notice warning"><b>项目备份包含明文成绩。</b>只保存在自己的电脑或加密存储中，不要把它上传到公开仓库，也不要发给家长。</p>
+    </section>
+
+    <section>
+      <h2>Token 权限</h2>
+      <p>在 GitHub 创建 Fine-grained Token 时，Repository access 只选择 <code>yusheng266186-beep/grade-query</code>，Repository permissions 只开启 <b>Contents: Read and write</b>。工作台上传结束或失败后都会清空 Token 输入框。</p>
+      <p><a href="https://github.com/settings/personal-access-tokens/new" target="_blank" rel="noreferrer">打开 GitHub Fine-grained Token 创建页 ↗</a></p>
+    </section>
+
+    <footer>成绩发布工作台 · 数据在当前浏览器中校验与加密</footer>
+  </div>
+</body>
+</html>

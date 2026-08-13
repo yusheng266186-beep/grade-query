@@ -19,6 +19,9 @@ const state = {
   projectFileName: "",
   projectWarnings: [],
   generated: null,
+  backupSaved: false,
+  generating: false,
+  uploading: false,
 };
 
 const $ = (id) => document.getElementById(id);
@@ -60,12 +63,31 @@ function toInteger(value) {
   return number != null && Number.isInteger(number) ? number : null;
 }
 
+function checkedNumber(value, label, issues) {
+  if (isEmpty(value)) return null;
+  const number = toNumber(value);
+  if (number == null) issues.push(`${label}“${normalizeText(value)}”不是有效数字。`);
+  return number;
+}
+
+function checkedInteger(value, label, issues) {
+  return checkedNumber(value, label, issues);
+}
+
 function toDate(value) {
   const text = normalizeText(value);
   if (!text) return "";
-  if (/^\d{4}[年\-/]\d{1,2}[月\-/]\d{1,2}日?$/.test(text)) {
-    const parts = text.replace(/[年月日]/g, "-").replace(/\/$/g, "").split(/[\-/]/).filter(Boolean);
-    if (parts.length === 3) return `${parts[0].padStart(4, "0")}-${parts[1].padStart(2, "0")}-${parts[2].padStart(2, "0")}`;
+  const normalized = text.replace(/[年月]/g, "-").replace(/日$/, "").replace(/\//g, "-");
+  const match = normalized.match(/^(\d{4})-(\d{1,2})-(\d{1,2})$/);
+  if (match) {
+    const year = Number(match[1]);
+    const month = Number(match[2]);
+    const day = Number(match[3]);
+    const date = new Date(Date.UTC(year, month - 1, day));
+    if (date.getUTCFullYear() === year && date.getUTCMonth() === month - 1 && date.getUTCDate() === day) {
+      return `${String(year).padStart(4, "0")}-${String(month).padStart(2, "0")}-${String(day).padStart(2, "0")}`;
+    }
+    return "";
   }
   const date = new Date(text);
   if (Number.isNaN(date.getTime())) return "";
@@ -76,7 +98,28 @@ function normalizeScope(value) {
   const text = normalizeText(value).toLowerCase();
   if (text.includes("市") || text === "city") return "city";
   if (text.includes("校") || text === "school") return "school";
-  return "class";
+  if (text.includes("班") || text === "class" || !text) return "class";
+  return "";
+}
+
+function checkedDate(value, label, issues) {
+  if (isEmpty(value)) return "";
+  const date = toDate(value);
+  if (!date) issues.push(`${label}“${normalizeText(value)}”不是有效日期，请使用 YYYY-MM-DD。`);
+  return date;
+}
+
+function checkedScope(value, label, issues) {
+  if (isEmpty(value)) return "class";
+  const scope = normalizeScope(value);
+  if (!scope) issues.push(`${label}“${normalizeText(value)}”无法识别，只能填写 city/全市、school/校内或 class/班级。`);
+  return scope || "class";
+}
+
+function normalizeSubjectKey(value) {
+  const key = normalizeText(value);
+  const subject = SUBJECTS.find((item) => normalizeKey(item.key) === normalizeKey(key) || normalizeKey(item.name) === normalizeKey(key));
+  return subject?.key || key;
 }
 
 function canonicalStudentId(value) {
@@ -149,40 +192,50 @@ function subjectAliases(subject, field) {
   ];
 }
 
-function normalizeSubject(subject, raw) {
-  const score = toNumber(raw?.score ?? raw);
-  const rank = toInteger(raw?.rank);
+function normalizeSubject(subject, raw, label, issues) {
+  const isRecord = raw && typeof raw === "object" && !Array.isArray(raw);
+  const score = checkedNumber(isRecord ? raw.score : raw, `${label}${subject.name}分数`, issues);
+  const rank = checkedInteger(isRecord ? raw.rank : null, `${label}${subject.name}排名`, issues);
   return { score, rank };
 }
 
 function normalizeExam(payload) {
   const source = payload.exam || payload;
+  const fieldIssues = [];
+  const dataIssues = [...(payload.dataIssues || [])];
   const rawSubjects = Array.isArray(payload.subjects) ? payload.subjects : SUBJECTS;
   const subjects = SUBJECTS.map((fallback) => {
     const found = rawSubjects.find((item) => normalizeKey(item.key || item.name) === normalizeKey(fallback.key) || normalizeKey(item.name) === normalizeKey(fallback.name));
+    const rawMax = found?.max ?? found?.maxScore;
+    const parsedMax = checkedNumber(rawMax, `${fallback.name}满分`, dataIssues);
     return {
       ...fallback,
       ...(found || {}),
-      max: toNumber(found?.max ?? found?.maxScore) ?? fallback.max,
+      key: fallback.key,
+      name: normalizeText(found?.name) || fallback.name,
+      max: parsedMax ?? fallback.max,
     };
   });
   const cutoffs = {};
   for (const subject of subjects) {
     const raw = source.cutoffs?.[subject.key] || payload.cutoffs?.[subject.key] || {};
     cutoffs[subject.key] = {
-      controlLine: toNumber(raw.controlLine ?? raw.control ?? raw.特控线),
-      bachelorLine: toNumber(raw.bachelorLine ?? raw.bachelor ?? raw.本科线),
+      controlLine: checkedNumber(raw.controlLine ?? raw.control ?? raw.特控线, `${subject.name}特控线`, dataIssues),
+      bachelorLine: checkedNumber(raw.bachelorLine ?? raw.bachelor ?? raw.本科线, `${subject.name}本科线`, dataIssues),
     };
   }
-  const students = (payload.students || source.students || []).map((item) => {
+  const students = (payload.students || source.students || []).map((item, index) => {
+    const label = item.__sourceLabel || `学生记录第 ${index + 1} 条：`;
+    const totalRaw = item.totalScore ?? item.total ?? item.总分;
     const student = {
+      _sourceLabel: label,
       studentId: canonicalStudentId(item.studentId ?? item.id ?? item.学号),
       name: normalizeText(item.name ?? item.studentName ?? item.姓名),
       className: normalizeText(item.className ?? item.class ?? item.班级 ?? source.className),
-      totalScore: toNumber(item.totalScore ?? item.total ?? item.总分),
-      cityRank: toInteger(item.cityRank ?? item.全市排名),
-      schoolRank: toInteger(item.schoolRank ?? item.校内排名),
-      classRank: toInteger(item.classRank ?? item.班级排名),
+      totalScore: checkedNumber(totalRaw, `${label}总分`, dataIssues),
+      cityRank: checkedInteger(item.cityRank ?? item.全市排名, `${label}全市排名`, dataIssues),
+      schoolRank: checkedInteger(item.schoolRank ?? item.校内排名, `${label}校内排名`, dataIssues),
+      classRank: checkedInteger(item.classRank ?? item.班级排名, `${label}班级排名`, dataIssues),
       note: normalizeText(item.note ?? item.备注),
       subjects: {},
     };
@@ -191,36 +244,46 @@ function normalizeExam(payload) {
         score: item[`${subject.key}Score`],
         rank: item[`${subject.key}Rank`],
       };
-      student.subjects[subject.key] = normalizeSubject(subject, raw);
+      student.subjects[subject.key] = normalizeSubject(subject, raw, label, dataIssues);
     }
     const points = subjects.map((subject) => student.subjects[subject.key].score).filter((value) => value != null);
-    if (student.totalScore == null && points.length) student.totalScore = points.reduce((sum, value) => sum + value, 0);
+    student._filledScoreCount = points.length;
+    student._autoTotal = isEmpty(totalRaw) && points.length > 0;
+    if (student._autoTotal) student.totalScore = points.reduce((sum, value) => sum + value, 0);
     return student;
   });
-  const knowledge = (payload.knowledge || source.knowledge || []).map((item) => ({
-    studentId: canonicalStudentId(item.studentId ?? item.id ?? item.学号),
-    subjectKey: normalizeText(item.subjectKey ?? item.subject ?? item.科目),
-    knowledge: normalizeText(item.knowledge ?? item.知识点),
-    question: normalizeText(item.question ?? item.题号 ?? item.题目),
-    loss: toNumber(item.loss ?? item.失分),
-  })).filter((item) => item.studentId && item.subjectKey && item.knowledge);
+  const knowledge = (payload.knowledge || source.knowledge || []).map((item, index) => {
+    const label = item.__sourceLabel || `知识点记录第 ${index + 1} 条：`;
+    return {
+      _sourceLabel: label,
+      studentId: canonicalStudentId(item.studentId ?? item.id ?? item.学号),
+      subjectKey: normalizeSubjectKey(item.subjectKey ?? item.subject ?? item.科目),
+      knowledge: normalizeText(item.knowledge ?? item.知识点),
+      question: normalizeText(item.question ?? item.题号 ?? item.题目),
+      loss: checkedNumber(item.loss ?? item.失分, `${label}失分`, dataIssues),
+    };
+  });
+  const rawDate = source.examDate ?? source.date ?? source.考试日期;
+  const rawScope = source.scope ?? source.rankScope ?? source.排名范围;
   return {
     kind: "exam-input",
     schemaVersion: 2,
     exam: {
       examId: normalizeText(source.examId ?? source.id ?? source.考试编号),
       examName: normalizeText(source.examName ?? source.name ?? source.考试名称),
-      examDate: toDate(source.examDate ?? source.date ?? source.考试日期),
-      scope: normalizeScope(source.scope ?? source.rankScope ?? source.排名范围),
+      examDate: checkedDate(rawDate, "考试日期", fieldIssues),
+      scope: checkedScope(rawScope, "排名范围", fieldIssues),
       className: normalizeText(source.className ?? source.class ?? source.班级),
-      controlLine: toNumber(source.controlLine ?? source.特控线),
-      bachelorLine: toNumber(source.bachelorLine ?? source.本科线),
+      controlLine: checkedNumber(source.controlLine ?? source.特控线, "总分特控线", fieldIssues),
+      bachelorLine: checkedNumber(source.bachelorLine ?? source.本科线, "总分本科线", fieldIssues),
       note: normalizeText(source.note ?? source.备注),
     },
     subjects,
     cutoffs,
     students,
     knowledge,
+    fieldIssues,
+    dataIssues,
   };
 }
 
@@ -255,7 +318,7 @@ function buildExamFromRows(metadataRows, subjectRows, studentRows, knowledgeRows
     return {
       ...fallback,
       name: normalizeText(rowValue(row, ["科目名称", "subjectName", "科目"])) || fallback.name,
-      max: toNumber(rowValue(row, ["满分", "maxScore", "max"])) ?? fallback.max,
+      max: row ? rowValue(row, ["满分", "maxScore", "max"]) : fallback.max,
     };
   });
   const cutoffs = {};
@@ -266,39 +329,39 @@ function buildExamFromRows(metadataRows, subjectRows, studentRows, knowledgeRows
       return normalizeKey(key) === normalizeKey(subject.key) || normalizeKey(name) === normalizeKey(subject.name);
     });
     cutoffs[subject.key] = {
-      controlLine: toNumber(rowValue(row, ["特控线", "controlLine", "control"])),
-      bachelorLine: toNumber(rowValue(row, ["本科线", "bachelorLine", "bachelor"])),
+      controlLine: rowValue(row, ["特控线", "controlLine", "control"]),
+      bachelorLine: rowValue(row, ["本科线", "bachelorLine", "bachelor"]),
     };
   }
-  const students = (studentRows || []).map((row) => {
+  const students = (studentRows || []).map((row, index) => {
     const student = {
+      __sourceLabel: row.__sourceLabel || `学生数据第 ${index + 1} 条：`,
       studentId: canonicalStudentId(rowValue(row, ["学号", "studentId", "id", "查询识别码"])),
       name: normalizeText(rowValue(row, ["姓名", "学生姓名", "name", "studentName"])),
       className: normalizeText(rowValue(row, ["班级", "班级名称", "className"])) || normalizeText(source.className),
-      totalScore: toNumber(rowValue(row, ["总分", "totalScore", "total"])),
-      cityRank: toInteger(rowValue(row, ["全市排名", "市排名", "cityRank"])),
-      schoolRank: toInteger(rowValue(row, ["校内排名", "校排名", "schoolRank"])),
-      classRank: toInteger(rowValue(row, ["班级排名", "班排名", "classRank"])),
+      totalScore: rowValue(row, ["总分", "totalScore", "total"]),
+      cityRank: rowValue(row, ["全市排名", "市排名", "cityRank"]),
+      schoolRank: rowValue(row, ["校内排名", "校排名", "schoolRank"]),
+      classRank: rowValue(row, ["班级排名", "班排名", "classRank"]),
       note: normalizeText(rowValue(row, ["备注", "note"])),
       subjects: {},
     };
     for (const subject of subjects) {
       student.subjects[subject.key] = {
-        score: toNumber(rowValue(row, subjectAliases(subject, "score"))),
-        rank: toInteger(rowValue(row, subjectAliases(subject, "rank"))),
+        score: rowValue(row, subjectAliases(subject, "score")),
+        rank: rowValue(row, subjectAliases(subject, "rank")),
       };
     }
-    const scores = subjects.map((subject) => student.subjects[subject.key].score).filter((value) => value != null);
-    if (student.totalScore == null && scores.length) student.totalScore = scores.reduce((sum, value) => sum + value, 0);
     return student;
   }).filter((student) => student.studentId || student.name);
-  const knowledge = (knowledgeRows || []).map((row) => ({
+  const knowledge = (knowledgeRows || []).map((row, index) => ({
+    __sourceLabel: row.__sourceLabel || `知识点数据第 ${index + 1} 条：`,
     studentId: canonicalStudentId(rowValue(row, ["学号", "studentId", "id"])),
     subjectKey: normalizeText(rowValue(row, ["科目键", "subjectKey", "科目"])),
     knowledge: normalizeText(rowValue(row, ["知识点", "knowledge"])),
     question: normalizeText(rowValue(row, ["题号", "题目", "question"])),
-    loss: toNumber(rowValue(row, ["失分", "loss"])),
-  })).filter((item) => item.studentId && item.knowledge);
+    loss: rowValue(row, ["失分", "loss"]),
+  }));
   return normalizeExam({ kind: "exam-input", exam: source, subjects, cutoffs, students, knowledge });
 }
 
@@ -330,8 +393,11 @@ function parseCsv(text) {
     }
     if (!quoted) pushRow(); else cell += "\n";
   }
+  if (quoted) throw new Error("CSV 中存在未闭合的双引号，请检查包含逗号或换行的单元格。");
   const headers = rows.shift().map((header) => normalizeText(header));
-  return { metadata, rows: rows.filter((row) => row.some((value) => normalizeText(value))).map((row) => Object.fromEntries(headers.map((header, index) => [header, row[index] ?? ""])) ) };
+  const duplicateHeaders = headers.filter((header, index) => header && headers.indexOf(header) !== index);
+  if (duplicateHeaders.length) throw new Error(`CSV 表头重复：${[...new Set(duplicateHeaders)].join("、")}。`);
+  return { metadata, rows: rows.filter((row) => row.some((value) => normalizeText(value))).map((row, rowIndex) => ({ ...Object.fromEntries(headers.map((header, index) => [header, row[index] ?? ""])), __sourceLabel: `CSV 学生数据第 ${rowIndex + 1} 条：` })) };
 }
 
 function parseCsvExam(text) {
@@ -347,9 +413,12 @@ function sheetRows(workbook, names) {
   const headerIndex = matrix.findIndex((row) => row.some((value) => ["字段", "学号", "科目键", "知识点"].includes(normalizeText(value))));
   if (headerIndex < 0) return [];
   const headers = matrix[headerIndex].map((value, index) => normalizeText(value) || `__empty_${index}`);
+  const duplicateHeaders = headers.filter((header, index) => !header.startsWith("__empty_") && headers.indexOf(header) !== index);
+  if (duplicateHeaders.length) throw new Error(`${target}工作表表头重复：${[...new Set(duplicateHeaders)].join("、")}。`);
   return matrix.slice(headerIndex + 1)
-    .filter((row) => row.some((value) => normalizeText(value)))
-    .map((row) => Object.fromEntries(headers.map((header, index) => [header, row[index] ?? ""])));
+    .map((row, index) => ({ row, rowNumber: headerIndex + index + 2 }))
+    .filter(({ row }) => row.some((value) => normalizeText(value)))
+    .map(({ row, rowNumber }) => ({ ...Object.fromEntries(headers.map((header, index) => [header, row[index] ?? ""])), __sourceLabel: `Excel 第 ${rowNumber} 行：` }));
 }
 
 function parseXlsx(arrayBuffer) {
@@ -404,6 +473,7 @@ function makeStudentExam(exam, student) {
     name: exam.exam.examName,
     date: exam.exam.examDate,
     scope: exam.exam.scope,
+    className: student.className || exam.exam.className,
     total: student.totalScore,
     rank: primaryRank(student, exam.exam.scope),
     cityRank: student.cityRank,
@@ -411,6 +481,7 @@ function makeStudentExam(exam, student) {
     classRank: student.classRank,
     scores,
     subjectRanks,
+    knowledge: knowledgeForStudent(exam, student.studentId),
   };
   const current = {
     totalScore: student.totalScore,
@@ -424,6 +495,41 @@ function makeStudentExam(exam, student) {
     subjects: currentSubjects,
   };
   return { examRecord, current };
+}
+
+function compareExamOrder(left, right) {
+  const leftDate = normalizeText(left?.date ?? left?.examDate);
+  const rightDate = normalizeText(right?.date ?? right?.examDate);
+  if (leftDate && rightDate && leftDate !== rightDate) return leftDate.localeCompare(rightDate);
+  if (leftDate !== rightDate) return leftDate ? 1 : -1;
+  return normalizeText(left?.examId).localeCompare(normalizeText(right?.examId));
+}
+
+function currentFromExamRecord(examRecord, examMeta, subjects) {
+  const currentSubjects = {};
+  for (const subject of subjects) {
+    const score = toNumber(examRecord?.scores?.[subject.key]);
+    const rank = toInteger(examRecord?.subjectRanks?.[subject.key]);
+    const cutoff = examMeta?.cutoffs?.[subject.key] || {};
+    currentSubjects[subject.key] = {
+      score,
+      rank,
+      controlDiff: score != null && cutoff.controlLine != null ? score - cutoff.controlLine : null,
+      bachelorDiff: score != null && cutoff.bachelorLine != null ? score - cutoff.bachelorLine : null,
+    };
+  }
+  const totalScore = toNumber(examRecord?.total ?? examRecord?.scores?.total);
+  return {
+    totalScore,
+    cityRank: toInteger(examRecord?.cityRank),
+    schoolRank: toInteger(examRecord?.schoolRank),
+    classRank: toInteger(examRecord?.classRank),
+    controlLine: toNumber(examMeta?.controlLine),
+    bachelorLine: toNumber(examMeta?.bachelorLine),
+    controlDiff: totalScore != null && examMeta?.controlLine != null ? totalScore - examMeta.controlLine : null,
+    bachelorDiff: totalScore != null && examMeta?.bachelorLine != null ? totalScore - examMeta.bachelorLine : null,
+    subjects: currentSubjects,
+  };
 }
 
 function knowledgeForStudent(exam, studentId) {
@@ -457,6 +563,11 @@ function mergeExamIntoProject(inputProject, exam) {
   const oldExamIndex = project.exams.findIndex((item) => item.examId === exam.exam.examId);
   if (oldExamIndex >= 0) project.exams.splice(oldExamIndex, 1, examMeta); else project.exams.push(examMeta);
   const byId = new Map(project.students.map((student) => [canonicalStudentId(student.studentId), student]));
+  if (oldExamIndex >= 0) {
+    for (const target of byId.values()) {
+      target.exams = (Array.isArray(target.exams) ? target.exams : []).filter((item) => item.examId !== exam.exam.examId);
+    }
+  }
   for (const sourceStudent of exam.students) {
     if (!sourceStudent.studentId) continue;
     const id = canonicalStudentId(sourceStudent.studentId);
@@ -467,33 +578,58 @@ function mergeExamIntoProject(inputProject, exam) {
     const { examRecord, current } = makeStudentExam(exam, sourceStudent);
     const index = target.exams.findIndex((item) => item.examId === exam.exam.examId);
     if (index >= 0) target.exams.splice(index, 1, examRecord); else target.exams.push(examRecord);
-    target.exams.sort((a, b) => String(a.date || a.examId).localeCompare(String(b.date || b.examId)));
-    target.currentExamId = exam.exam.examId;
-    target.current = current;
-    target.currentExam = clone(examMeta);
-    target.classSummary = clone(examMeta.summary);
-    target.knowledge = knowledgeForStudent(exam, id);
+    target.exams.sort(compareExamOrder);
+    if (!target.current || target.exams[target.exams.length - 1]?.examId === exam.exam.examId) target.current = current;
     byId.set(id, target);
   }
-  project.students = Array.from(byId.values());
-  project.exams.sort((a, b) => String(a.examDate || a.examId).localeCompare(String(b.examDate || b.examId)));
-  project.meta = { ...(project.meta || {}), className: exam.exam.className || project.meta?.className, latestExam: exam.exam.examName, latestExamDate: exam.exam.examDate };
+  project.exams.sort(compareExamOrder);
+  const examById = new Map(project.exams.map((item) => [item.examId, item]));
+  project.students = Array.from(byId.values()).filter((student) => Array.isArray(student.exams) && student.exams.length).map((student) => {
+    student.exams.sort(compareExamOrder);
+    const latestRecord = student.exams[student.exams.length - 1];
+    const latestMeta = examById.get(latestRecord.examId) || examMeta;
+    student.currentExamId = latestRecord.examId;
+    student.className = latestRecord.className || student.className || latestMeta.className;
+    student.current = currentFromExamRecord(latestRecord, latestMeta, project.subjects);
+    student.currentExam = clone(latestMeta);
+    student.classSummary = clone(latestMeta.summary || null);
+    student.knowledge = clone(latestRecord.knowledge || (latestRecord.examId === exam.exam.examId ? knowledgeForStudent(exam, student.studentId) : {}));
+    return student;
+  });
+  const latestExam = project.exams[project.exams.length - 1] || examMeta;
+  project.meta = { ...(project.meta || {}), className: latestExam.className || exam.exam.className || project.meta?.className, latestExam: latestExam.examName, latestExamDate: latestExam.examDate };
   project.dataVersion = `v2-${Date.now()}`;
   project.generatedAt = new Date().toISOString();
   return project;
 }
 
 function validateExam(exam) {
-  const errors = [];
+  const errors = [...(exam?.fieldIssues || []), ...(exam?.dataIssues || [])];
   const warnings = [];
-  if (!exam) return { errors: ["请先导入一份考试模板。"], warnings: [], validStudents: 0 };
+  const studentErrorIndexes = new Set();
+  if (!exam) return { errors: ["请先导入一份考试模板。"], warnings: [], validStudents: 0, studentErrorIndexes };
   const meta = exam.exam;
   if (!meta.examName) errors.push("考试名称不能为空。");
   if (!meta.examId) errors.push("考试编号不能为空；它用于识别和覆盖同一场考试。");
   if (!meta.className) errors.push("班级名称不能为空。");
   if (!meta.examDate) warnings.push("未填写考试日期，历次趋势会按导入顺序保留。");
   if (!exam.students.length) errors.push("没有可识别的学生记录。");
-  const sampleStudents = exam.students.filter((student) => /^TEST\d+$/i.test(student.studentId) || /示例学生|测试学生/.test(student.name));
+  const totalMax = exam.subjects.reduce((sum, subject) => sum + (toNumber(subject.max) || 0), 0);
+  if (meta.controlLine != null && (meta.controlLine < 0 || meta.controlLine > totalMax)) errors.push(`总分特控线 ${meta.controlLine} 超出 0–${totalMax} 范围。`);
+  if (meta.bachelorLine != null && (meta.bachelorLine < 0 || meta.bachelorLine > totalMax)) errors.push(`总分本科线 ${meta.bachelorLine} 超出 0–${totalMax} 范围。`);
+  if (meta.controlLine != null && meta.bachelorLine != null && meta.controlLine < meta.bachelorLine) errors.push("总分特控线不能低于本科线，请检查两条分数线是否填反。");
+  for (const subject of exam.subjects) {
+    if (subject.max <= 0) errors.push(`${subject.name}满分必须大于 0。`);
+    const cutoff = exam.cutoffs?.[subject.key] || {};
+    if (cutoff.controlLine != null && (cutoff.controlLine < 0 || cutoff.controlLine > subject.max)) errors.push(`${subject.name}特控线 ${cutoff.controlLine} 超出 0–${subject.max} 范围。`);
+    if (cutoff.bachelorLine != null && (cutoff.bachelorLine < 0 || cutoff.bachelorLine > subject.max)) errors.push(`${subject.name}本科线 ${cutoff.bachelorLine} 超出 0–${subject.max} 范围。`);
+    if (cutoff.controlLine != null && cutoff.bachelorLine != null && cutoff.controlLine < cutoff.bachelorLine) errors.push(`${subject.name}特控线不能低于本科线。`);
+  }
+  const sampleStudents = exam.students.filter((student, index) => {
+    const sample = /^TEST\d+$/i.test(student.studentId) || /示例学生|测试学生/.test(student.name);
+    if (sample) studentErrorIndexes.add(index);
+    return sample;
+  });
   if (sampleStudents.length) errors.push(`检测到 ${sampleStudents.length} 条模板示例学生，请删除示例行并填入正式数据后再发布。`);
   if (meta.controlLine == null) warnings.push("未填写总分特控线，将不显示总分特控线差。");
   if (meta.bachelorLine == null) warnings.push("未填写总分本科线，将不显示总分本科线差。");
@@ -501,11 +637,13 @@ function validateExam(exam) {
   const names = new Set();
   let validStudents = 0;
   exam.students.forEach((student, index) => {
-    const label = `第 ${index + 2} 行`;
-    if (!student.studentId) errors.push(`${label}缺少学号/查询识别码。`);
-    else if (ids.has(student.studentId)) errors.push(`${label}的查询识别码重复：${student.studentId}。`);
+    const label = student._sourceLabel || `学生记录第 ${index + 1} 条：`;
+    const addError = (message) => { errors.push(`${label}${message}`); studentErrorIndexes.add(index); };
+    if ((exam.dataIssues || []).some((issue) => issue.startsWith(label))) studentErrorIndexes.add(index);
+    if (!student.studentId) addError("缺少学号/查询识别码。");
+    else if (ids.has(student.studentId)) addError(`查询识别码重复：${student.studentId}。`);
     else ids.add(student.studentId);
-    if (!student.name) errors.push(`${label}缺少学生姓名。`);
+    if (!student.name) addError("缺少学生姓名。");
     else if (names.has(student.name)) warnings.push(`姓名“${student.name}”出现多次，请确认查询识别码不同且准确。`);
     else names.add(student.name);
     if (!student.className) warnings.push(`${label}未填写班级，将使用考试信息中的班级。`);
@@ -514,20 +652,34 @@ function validateExam(exam) {
       const score = student.subjects?.[subject.key]?.score;
       if (score != null) {
         filledScores.push(score);
-        if (score < 0 || score > subject.max) errors.push(`${label}${subject.name}分数 ${score} 超出 0–${subject.max} 范围。`);
+        if (score < 0 || score > subject.max) addError(`${subject.name}分数 ${score} 超出 0–${subject.max} 范围。`);
       }
       const rank = student.subjects?.[subject.key]?.rank;
-      if (rank != null && (rank < 1 || !Number.isInteger(rank))) errors.push(`${label}${subject.name}排名必须是正整数。`);
+      if (rank != null && (rank < 1 || !Number.isInteger(rank))) addError(`${subject.name}排名必须是正整数。`);
     }
     for (const [key, value] of [["全市排名", student.cityRank], ["校内排名", student.schoolRank], ["班级排名", student.classRank]]) {
-      if (value != null && (value < 1 || !Number.isInteger(value))) errors.push(`${label}${key}必须是正整数。`);
+      if (value != null && (value < 1 || !Number.isInteger(value))) addError(`${key}必须是正整数。`);
     }
-    if (student.totalScore != null && (student.totalScore < 0 || student.totalScore > exam.subjects.reduce((sum, subject) => sum + subject.max, 0))) errors.push(`${label}总分超出科目满分合计范围。`);
-    if (student.totalScore == null && !filledScores.length) errors.push(`${label}没有总分，也没有任何科目分数。`);
+    if (student.totalScore != null && (student.totalScore < 0 || student.totalScore > totalMax)) addError(`总分 ${student.totalScore} 超出 0–${totalMax} 范围。`);
+    if (student.totalScore == null && !filledScores.length) addError("没有总分，也没有任何科目分数。");
+    if (student._autoTotal && filledScores.length < exam.subjects.length) warnings.push(`${label}总分由已填写的 ${filledScores.length}/${exam.subjects.length} 个科目自动合计，请确认其余科目确实应留空。`);
     if (student.totalScore != null && filledScores.length && Math.abs(student.totalScore - filledScores.reduce((sum, value) => sum + value, 0)) > 0.11) warnings.push(`${label}${student.name || student.studentId}的总分与已填科目合计不一致，系统保留你填写的总分。`);
-    if (student.studentId && student.name && (student.totalScore != null || filledScores.length)) validStudents += 1;
+    const primaryValue = meta.scope === "city" ? student.cityRank : meta.scope === "school" ? student.schoolRank : student.classRank;
+    if (primaryValue == null) warnings.push(`${label}${student.name || student.studentId || "该学生"}未填写${meta.scope === "city" ? "全市" : meta.scope === "school" ? "校内" : "班级"}排名，报告对应排名将显示为空。`);
+    if (!studentErrorIndexes.has(index) && student.studentId && student.name && (student.totalScore != null || filledScores.length)) validStudents += 1;
   });
-  return { errors, warnings, validStudents };
+  const validStudentIds = new Set(exam.students.map((student) => student.studentId).filter(Boolean));
+  const validSubjectKeys = new Set(exam.subjects.map((subject) => subject.key));
+  exam.knowledge.forEach((item, index) => {
+    const label = item._sourceLabel || `知识点记录第 ${index + 1} 条：`;
+    if (!item.studentId) errors.push(`${label}缺少学号/查询识别码。`);
+    else if (!validStudentIds.has(item.studentId)) errors.push(`${label}学号 ${item.studentId} 不在本次学生成绩中。`);
+    if (!item.subjectKey) errors.push(`${label}缺少科目键。`);
+    else if (!validSubjectKeys.has(item.subjectKey)) errors.push(`${label}科目“${item.subjectKey}”无法识别。`);
+    if (!item.knowledge) errors.push(`${label}缺少知识点名称。`);
+    if (item.loss != null && item.loss < 0) errors.push(`${label}失分不能为负数。`);
+  });
+  return { errors, warnings, validStudents, studentErrorIndexes };
 }
 
 function getMergePreview(exam) {
@@ -569,6 +721,12 @@ function renderMergePreview(exam) {
 
 function invalidateGenerated() {
   state.generated = null;
+  state.backupSaved = false;
+  for (const id of ["downloadZip", "downloadBundle", "downloadVersion"]) {
+    const anchor = $(id);
+    if (anchor?.dataset.url) URL.revokeObjectURL(anchor.dataset.url);
+    if (anchor) { delete anchor.dataset.url; anchor.removeAttribute("href"); }
+  }
   const downloadPanel = $("downloadPanel");
   if (downloadPanel) downloadPanel.hidden = true;
   const releaseManifest = $("releaseManifest");
@@ -579,6 +737,15 @@ function invalidateGenerated() {
   if (uploadButton) uploadButton.disabled = true;
   const uploadStatus = $("uploadStatus");
   if (uploadStatus) uploadStatus.textContent = "生成加密发布包后可上传";
+}
+
+function setEditingDisabled(disabled) {
+  for (const control of metadataForm.querySelectorAll("input, select")) control.disabled = disabled;
+  examFile.disabled = disabled;
+  projectFile.disabled = disabled;
+  $("chooseExamButton").disabled = disabled;
+  $("clearExamButton").disabled = disabled;
+  $("clearProjectButton").disabled = disabled;
 }
 
 function renderMessages(result) {
@@ -593,10 +760,11 @@ function renderMessages(result) {
 
 function renderPreview(exam, result) {
   const tbody = $("previewTable").querySelector("tbody");
-  tbody.innerHTML = exam.students.slice(0, 12).map((student) => {
-    const good = student.studentId && student.name && (student.totalScore != null || Object.values(student.subjects || {}).some((item) => item.score != null));
-    const warning = student.totalScore == null;
-    return `<tr><td><strong>${escapeHtml(student.name || "未填写")}</strong></td><td>${escapeHtml(student.studentId || "未填写")}</td><td>${displayNumber(student.totalScore)}</td><td>${displayNumber(primaryRank(student, exam.exam.scope), 0)}</td><td class="row-status ${good ? warning ? "warn" : "" : "error"}">${good ? warning ? "总分已计算" : "可发布" : "需修正"}</td></tr>`;
+  tbody.innerHTML = exam.students.slice(0, 12).map((student, index) => {
+    const hasError = result.studentErrorIndexes?.has(index);
+    const autoTotal = student._autoTotal;
+    const status = hasError ? "需修正" : autoTotal ? "总分已计算" : "可发布";
+    return `<tr><td><strong>${escapeHtml(student.name || "未填写")}</strong></td><td>${escapeHtml(student.studentId || "未填写")}</td><td>${displayNumber(student.totalScore)}</td><td>${displayNumber(primaryRank(student, exam.exam.scope), 0)}</td><td class="row-status ${hasError ? "error" : autoTotal ? "warn" : ""}">${status}</td></tr>`;
   }).join("");
   $("previewCaption").textContent = exam.students.length > 12 ? `显示前 12 条，共 ${exam.students.length} 条` : `${exam.students.length} 条记录`;
   previewWrap.hidden = !exam.students.length;
@@ -614,14 +782,16 @@ function escapeHtml(value) {
 function syncMetadataFromForm() {
   if (!state.exam) return;
   invalidateGenerated();
+  const issues = [];
   state.exam.exam.examName = normalizeText($("metaExamName").value);
   state.exam.exam.examId = normalizeText($("metaExamId").value);
-  state.exam.exam.examDate = toDate($("metaExamDate").value);
-  state.exam.exam.scope = normalizeScope($("metaScope").value);
+  state.exam.exam.examDate = checkedDate($("metaExamDate").value, "考试日期", issues);
+  state.exam.exam.scope = checkedScope($("metaScope").value, "排名范围", issues);
   state.exam.exam.className = normalizeText($("metaClassName").value);
-  state.exam.exam.controlLine = toNumber($("metaControlLine").value);
-  state.exam.exam.bachelorLine = toNumber($("metaBachelorLine").value);
+  state.exam.exam.controlLine = checkedNumber($("metaControlLine").value, "总分特控线", issues);
+  state.exam.exam.bachelorLine = checkedNumber($("metaBachelorLine").value, "总分本科线", issues);
   state.exam.exam.note = normalizeText($("metaNote").value);
+  state.exam.fieldIssues = issues;
   renderReview();
 }
 
@@ -680,7 +850,13 @@ function renderReview() {
 async function readExamFile(file) {
   if (file.size > MAX_EXAM_FILE_BYTES) throw new Error(`考试文件超过 12 MB（当前 ${(file.size / 1024 / 1024).toFixed(1)} MB），请删除无关图片、格式或工作表后重试。`);
   const name = file.name.toLowerCase();
-  if (name.endsWith(".json")) return normalizeExam(JSON.parse(await file.text()));
+  if (name.endsWith(".json")) {
+    const payload = JSON.parse(await file.text());
+    if (!payload || typeof payload !== "object" || Array.isArray(payload)) throw new Error("JSON 顶层必须是一个考试对象。");
+    if (payload.kind === "grade-project") throw new Error("这里选择的是项目备份；请在“导入上一次项目备份”处载入该文件。");
+    if (payload.schemaVersion != null && Number(payload.schemaVersion) !== 2) throw new Error(`不支持数据格式 v${payload.schemaVersion}，请重新下载当前 v2 模板。`);
+    return normalizeExam(payload);
+  }
   if (name.endsWith(".csv")) return parseCsvExam(await file.text());
   if (name.endsWith(".xlsx") || name.endsWith(".xls")) return parseXlsx(await file.arrayBuffer());
   throw new Error("只支持 .xlsx、.xls、.csv 或 .json 文件。");
@@ -828,6 +1004,7 @@ function parseRepository(value) {
 }
 
 async function uploadRelease() {
+  if (state.uploading) return;
   const uploadButton = $("uploadButton");
   const tokenInput = $("githubToken");
   const token = normalizeText(tokenInput.value);
@@ -836,12 +1013,21 @@ async function uploadRelease() {
   const branch = normalizeText($("githubBranch").value) || "main";
   if (!token) { showToast("请输入 Fine-grained Token 后再上传。"); tokenInput.focus(); return; }
   if (!state.generated) { showToast("请先生成加密发布包。"); return; }
+  const generated = state.generated;
   const apiRoot = `https://api.github.com/repos/${repoInfo.owner}/${repoInfo.repo}`;
   const files = [
-    { path: "data/grade-data.v2.json", content: JSON.stringify(state.generated.bundle, null, 2) },
-    { path: "data/version.json", content: JSON.stringify(state.generated.version, null, 2) },
+    { path: "data/grade-data.v2.json", content: JSON.stringify(generated.bundle, null, 2) },
+    { path: "data/version.json", content: JSON.stringify(generated.version, null, 2) },
   ];
+  state.uploading = true;
+  setEditingDisabled(true);
+  $("generateButton").disabled = true;
   uploadButton.disabled = true;
+  uploadButton.textContent = "正在发布…";
+  $("githubRepo").disabled = true;
+  $("githubBranch").disabled = true;
+  tokenInput.disabled = true;
+  $("toggleTokenButton").disabled = true;
   $("uploadStatus").textContent = "正在读取仓库版本…";
   $("pagesResult").hidden = true;
   try {
@@ -856,40 +1042,82 @@ async function uploadRelease() {
     }
     $("uploadStatus").textContent = "正在创建发布提交…";
     const tree = await githubRequest(`${apiRoot}/git/trees`, token, { method: "POST", body: JSON.stringify({ base_tree: headCommit.tree.sha, tree: treeEntries }) });
-    const commit = await githubRequest(`${apiRoot}/git/commits`, token, { method: "POST", body: JSON.stringify({ message: `data: publish ${state.generated.version.latestExam || "grade report"}`, tree: tree.sha, parents: [headSha] }) });
+    const commit = await githubRequest(`${apiRoot}/git/commits`, token, { method: "POST", body: JSON.stringify({ message: `data: publish ${generated.version.latestExam || "grade report"}`, tree: tree.sha, parents: [headSha] }) });
     await githubRequest(`${apiRoot}/git/refs/heads/${encodeURIComponent(branch)}`, token, { method: "PATCH", body: JSON.stringify({ sha: commit.sha, force: false }) });
     $("uploadStatus").textContent = "正在回读 GitHub 版本…";
     let verificationText = "提交已完成";
     try {
       const remoteVersionFile = await githubRequest(`${apiRoot}/contents/data/version.json?ref=${encodeURIComponent(branch)}`, token);
       const remoteVersion = JSON.parse(base64ToText(remoteVersionFile.content));
-      if (remoteVersion.releaseId !== state.generated.version.releaseId || remoteVersion.bundleSha256 !== state.generated.version.bundleSha256) {
+      if (remoteVersion.releaseId !== generated.version.releaseId || remoteVersion.bundleSha256 !== generated.version.bundleSha256) {
         throw new Error("GitHub 返回的版本与本次发布不一致");
       }
       verificationText = "GitHub 文件已回读校验";
     } catch (error) {
       verificationText = `提交已完成，版本回读暂未通过：${error.message}`;
     }
-    let pagesUrl = `https://${repoInfo.owner}.github.io/${repoInfo.repo}/`;
+    let pagesUrl = repoInfo.repo.toLowerCase() === `${repoInfo.owner}.github.io`.toLowerCase()
+      ? `https://${repoInfo.owner}.github.io/`
+      : `https://${repoInfo.owner}.github.io/${repoInfo.repo}/`;
     try {
       const pages = await githubRequest(`${apiRoot}/pages`, token);
       if (pages?.html_url) pagesUrl = pages.html_url;
     } catch (error) {
       // Contents-only tokens may not have Pages read permission; the deterministic URL is still valid.
     }
-    $("pagesLink").href = pagesUrl;
+    const pagesReleaseUrl = new URL(pagesUrl);
+    pagesReleaseUrl.searchParams.set("v", generated.version.releaseId);
+    $("pagesLink").href = pagesReleaseUrl.href;
     $("commitLink").href = commit.html_url || `https://github.com/${repoInfo.owner}/${repoInfo.repo}/commit/${commit.sha}`;
-    $("pagesResultText").textContent = `${verificationText}（${commit.sha.slice(0, 7)}）。GitHub Pages 通常需要几十秒到几分钟刷新。`;
     $("pagesResult").hidden = false;
-    $("uploadStatus").textContent = "上传成功，等待 Pages 刷新";
-    showToast("已上传到 GitHub，Pages 正在更新");
+    $("pagesResultTitle").textContent = "Pages 正在更新";
+    $("pagesResultText").textContent = `${verificationText}（${commit.sha.slice(0, 7)}），正在确认查询页已读取本次版本…`;
+    $("uploadStatus").textContent = "GitHub 已提交，正在等待 Pages 生效…";
+    tokenInput.value = "";
+    tokenInput.disabled = false;
+    const pagesReady = await waitForPagesRelease(pagesUrl, generated.version.releaseId);
+    if (pagesReady) {
+      $("pagesResultTitle").textContent = "发布完成，可以查询";
+      $("pagesResultText").textContent = `${verificationText}（${commit.sha.slice(0, 7)}），Pages 已读取本次发布版本。`;
+      $("uploadStatus").textContent = state.backupSaved ? "发布完成" : "发布完成 · 请再下载项目备份";
+      showToast("发布完成，成绩查询页已经生效");
+    } else {
+      $("pagesResultTitle").textContent = "提交成功，Pages 仍在刷新";
+      $("pagesResultText").textContent = `${verificationText}（${commit.sha.slice(0, 7)}）。等待超时但提交未丢失，请稍后打开查询页确认版本。`;
+      $("uploadStatus").textContent = "提交成功，Pages 尚在刷新";
+      showToast("GitHub 已提交，Pages 仍在刷新");
+    }
   } catch (error) {
     $("uploadStatus").textContent = `上传失败：${error.message}`;
     showToast(`GitHub 上传失败：${error.message}`);
   } finally {
     tokenInput.value = "";
-    uploadButton.disabled = false;
+    tokenInput.disabled = false;
+    $("toggleTokenButton").disabled = false;
+    $("githubRepo").disabled = false;
+    $("githubBranch").disabled = false;
+    setEditingDisabled(false);
+    uploadButton.textContent = "一键上传并发布";
+    uploadButton.disabled = !state.generated;
+    const valid = state.exam && validateExam(state.exam).errors.length === 0;
+    $("generateButton").disabled = !valid;
+    $("backupButton").disabled = !valid;
+    state.uploading = false;
   }
+}
+
+async function waitForPagesRelease(pagesUrl, releaseId, attempts = 12, interval = 5000) {
+  const versionUrl = new URL("data/version.json", pagesUrl).href;
+  for (let attempt = 0; attempt < attempts; attempt += 1) {
+    try {
+      const response = await fetch(`${versionUrl}?v=${Date.now()}`, { cache: "no-store" });
+      if (response.ok && (await response.json())?.releaseId === releaseId) return true;
+    } catch (error) {
+      // Pages may briefly return an old version or a network error while deploying.
+    }
+    if (attempt < attempts - 1) await new Promise((resolve) => setTimeout(resolve, interval));
+  }
+  return false;
 }
 
 function currentProject() {
@@ -987,6 +1215,14 @@ async function makeZip(bundle, version) {
 }
 
 async function generateRelease() {
+  if (state.generating) return;
+  const generateButton = $("generateButton");
+  state.generating = true;
+  generateButton.disabled = true;
+  generateButton.textContent = "正在加密…";
+  $("backupButton").disabled = true;
+  setEditingDisabled(true);
+  $("sideStatus").textContent = "正在生成";
   try {
     const project = currentProject();
     const { bundle, version } = await buildEncryptedBundle(project);
@@ -1010,14 +1246,22 @@ async function generateRelease() {
     $("progressBar").style.width = "100%";
     $("exportState").textContent = "生成完成";
     state.generated = { project, bundle, version };
+    state.backupSaved = false;
     $("uploadButton").disabled = false;
-    $("uploadStatus").textContent = "已生成，可输入 Token 一键上传";
+    $("uploadStatus").textContent = "已生成；建议先下载项目备份，再一键上传";
     showToast("加密发布包已生成");
     $("downloadPanel").scrollIntoView({ behavior: "smooth", block: "center" });
   } catch (error) {
     showToast(error.message || "生成失败");
     $("sideStatus").textContent = "生成失败";
     $("sideStatusCopy").textContent = error.message || "请检查模板和浏览器环境。";
+  } finally {
+    state.generating = false;
+    setEditingDisabled(false);
+    generateButton.textContent = "生成加密发布包";
+    const valid = state.exam && validateExam(state.exam).errors.length === 0;
+    generateButton.disabled = !valid;
+    $("backupButton").disabled = !valid;
   }
 }
 
@@ -1026,6 +1270,8 @@ function saveBackup() {
     const project = state.generated?.project || currentProject();
     const name = `grade-project-${project.dataVersion.replace(/[^a-z0-9-]/gi, "-")}.json`;
     downloadText(JSON.stringify(project, null, 2), name);
+    state.backupSaved = true;
+    if (state.generated && !state.uploading) $("uploadStatus").textContent = "项目备份已保存，可一键上传发布";
     showToast("项目备份已下载，请妥善保存在本地");
   } catch (error) { showToast(error.message || "备份失败"); }
 }
@@ -1050,6 +1296,19 @@ $("clearProjectButton").addEventListener("click", clearProject);
 $("generateButton").addEventListener("click", generateRelease);
 $("backupButton").addEventListener("click", saveBackup);
 $("uploadButton").addEventListener("click", uploadRelease);
+$("toggleTokenButton").addEventListener("click", () => {
+  const input = $("githubToken");
+  const showing = input.type === "text";
+  input.type = showing ? "password" : "text";
+  $("toggleTokenButton").textContent = showing ? "显示" : "隐藏";
+  $("toggleTokenButton").setAttribute("aria-pressed", String(!showing));
+});
 for (const input of metadataForm.querySelectorAll("input, select")) input.addEventListener("input", syncMetadataFromForm);
+
+window.addEventListener("beforeunload", (event) => {
+  if (!state.uploading && (!state.generated || state.backupSaved)) return;
+  event.preventDefault();
+  event.returnValue = "";
+});
 
 $("sideStatusCopy").textContent = window.isSecureContext ? "先下载模板，填入本次考试数据后导入。" : "请通过 GitHub Pages 或 localhost 打开工作台，才能使用浏览器加密。";

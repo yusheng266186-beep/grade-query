@@ -3,10 +3,12 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <meta name="theme-color" content="#173c4b">
+  <meta name="color-scheme" content="light">
   <meta name="robots" content="noindex,nofollow,noarchive">
   <meta name="description" content="成绩查询发布工作台：导入考试模板，校验、归档并生成前端加密发布包。">
   <title>成绩发布工作台</title>
-  <link rel="stylesheet" href="publisher.css">
+  <link rel="stylesheet" href="publisher.css?v=20260813-2">
 </head>
 <body>
   <div class="app-shell">
@@ -59,9 +61,9 @@
               <span class="file-icon">DOC</span><div><b id="examFileName">—</b><small id="examFileInfo">—</small></div><button class="icon-button" id="clearExamButton" type="button" aria-label="移除考试文件">×</button>
             </div>
             <div class="template-actions">
-              <a class="text-action" href="templates/exam-template.xlsx" download>↓ 下载 Excel 模板</a>
-              <a class="text-action" href="templates/exam-template.json" download>↓ 下载 JSON 模板</a>
-              <a class="text-action" href="templates/exam-template.csv" download>↓ 下载 CSV 模板</a>
+              <a class="text-action" href="templates/exam-template.xlsx?v=20260813-2" download>↓ 下载 Excel 模板</a>
+              <a class="text-action" href="templates/exam-template.json?v=20260813-2" download>↓ 下载 JSON 模板</a>
+              <a class="text-action" href="templates/exam-template.csv?v=20260813-2" download>↓ 下载 CSV 模板</a>
             </div>
           </section>
 
@@ -127,6 +129,7 @@
               <div class="success-mark">✓</div><div><b>发布包已生成</b><p id="downloadSummary">—</p></div>
               <div class="download-links"><a id="downloadZip" class="button button-primary" href="#" download hidden>下载 ZIP 发布包</a><a id="downloadBundle" class="button button-secondary" href="#" download>下载加密数据</a><a id="downloadVersion" class="button button-secondary" href="#" download>下载版本信息</a></div>
               <div class="release-manifest" id="releaseManifest" hidden><span class="mini-label">RELEASE MANIFEST</span><div><b id="releaseVersion">—</b><span id="releaseHash">—</span></div><small id="releaseFiles">—</small></div>
+              <p class="backup-reminder"><b>发布前别忘了：</b>点击上方“下载项目备份”。它不上传 GitHub，但下次考试合并历史趋势时必须使用。</p>
             </div>
             <div class="github-upload" id="githubUploadPanel">
               <div class="upload-heading"><div><span class="mini-label">OPTIONAL · ONE CLICK</span><b>直接发布到 GitHub Pages</b></div><span class="upload-lock">TOKEN 仅当前页面</span></div>
@@ -134,11 +137,11 @@
               <div class="github-fields">
                 <label><span>仓库</span><input id="githubRepo" type="text" value="yusheng266186-beep/grade-query" autocomplete="off" spellcheck="false"></label>
                 <label><span>分支</span><input id="githubBranch" type="text" value="main" autocomplete="off" spellcheck="false"></label>
-                <label class="token-field"><span>Fine-grained Token</span><input id="githubToken" type="password" placeholder="github_pat_…" autocomplete="off" spellcheck="false"></label>
+                <label class="token-field"><span>Fine-grained Token</span><span class="token-input-wrap"><input id="githubToken" type="password" placeholder="github_pat_…" autocomplete="new-password" spellcheck="false"><button id="toggleTokenButton" type="button" aria-pressed="false">显示</button></span></label>
               </div>
               <div class="upload-actions"><button class="button button-primary" id="uploadButton" type="button" disabled>一键上传并发布</button><span class="upload-status" id="uploadStatus" role="status" aria-live="polite">生成加密发布包后可上传</span></div>
-              <div class="pages-result" id="pagesResult" hidden><span class="success-mark">↗</span><div><b>Pages 正在更新</b><p id="pagesResultText">—</p><a id="pagesLink" href="#" target="_blank" rel="noreferrer">打开成绩查询页面 ↗</a><a id="commitLink" href="#" target="_blank" rel="noreferrer">查看本次提交 ↗</a></div></div>
-              <details class="token-help"><summary>Token 需要什么权限？</summary><p>创建 Fine-grained Token 时，将 Repository access 限定为 <code>yusheng266186-beep/grade-query</code>，Repository permissions 只开启 <b>Contents: Read and write</b>。如果仓库启用了严格的 Pages 管理权限，再额外开启 Pages: Read；本工作台不会把 Token 保存到仓库。</p></details>
+              <div class="pages-result" id="pagesResult" hidden><span class="success-mark">↗</span><div><b id="pagesResultTitle">Pages 正在更新</b><p id="pagesResultText">—</p><a id="pagesLink" href="#" target="_blank" rel="noreferrer">打开成绩查询页面 ↗</a><a id="commitLink" href="#" target="_blank" rel="noreferrer">查看本次提交 ↗</a></div></div>
+              <details class="token-help"><summary>Token 需要什么权限？</summary><p>创建 Fine-grained Token 时，将 Repository access 限定为 <code>yusheng266186-beep/grade-query</code>，Repository permissions 只开启 <b>Contents: Read and write</b>。如果仓库启用了严格的 Pages 管理权限，再额外开启 Pages: Read；本工作台不会把 Token 保存到仓库。</p><a href="https://github.com/settings/personal-access-tokens/new" target="_blank" rel="noreferrer">打开 GitHub Token 创建页 ↗</a></details>
             </div>
             <div class="publish-note"><b>如何发布到 GitHub Pages</b><span>一键发布后工作台会回读远端版本进行校验；如果手动上传，则把 ZIP 内的 <code>data/grade-data.v2.json</code> 和 <code>data/version.json</code> 覆盖到仓库同名目录，查询页无需重新生成。</span></div>
           </section>
@@ -165,7 +168,7 @@
             <span class="mini-label">需要帮助？</span>
             <b>先看输入格式说明</b>
             <p>模板的“填写说明”页包含字段含义、排名范围、科目线和知识点失分的填写示例。</p>
-            <a href="docs/INPUT_FORMAT.md" target="_blank" rel="noreferrer">打开格式说明 ↗</a>
+            <a href="guide.html?v=20260813-2" target="_blank" rel="noreferrer">打开图文使用说明 ↗</a>
           </section>
         </aside>
       </section>
@@ -174,8 +177,9 @@
   </div>
 
   <div class="toast" id="toast" role="status" aria-live="polite"></div>
-  <script src="vendor/xlsx.full.min.js"></script>
-  <script src="vendor/jszip.min.js"></script>
-  <script src="publisher.js" defer></script>
+  <noscript><p class="noscript-note">此工作台需要 JavaScript 才能读取模板和生成加密发布包，请开启 JavaScript 后刷新页面。</p></noscript>
+  <script src="vendor/xlsx.full.min.js?v=20260813-2"></script>
+  <script src="vendor/jszip.min.js?v=20260813-2"></script>
+  <script src="publisher.js?v=20260813-2" defer></script>
 </body>
 </html>

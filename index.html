@@ -152,6 +152,7 @@
       background: white;
       box-shadow: 0 0 0 4px rgba(47, 113, 104, .10);
     }
+    .field input[aria-invalid="true"] { border-color: #bf7470; background: #fffafa; box-shadow: 0 0 0 3px rgba(173,98,97,.08); }
     .field input::placeholder { color: #afb7b7; }
     .input-wrap { position: relative; }
     .input-wrap input { padding-right: 48px; }
@@ -183,6 +184,7 @@
       font-size: 12px;
     }
     .query-helper { display: flex; justify-content: space-between; gap: 12px; margin-top: 4px; color: #9aa5a7; font-size: 10px; line-height: 1.5; }
+    .query-js-warning { margin: 12px 0 0; padding: 10px 12px; border-radius: 10px; color: #8a4f4f; background: var(--rose-soft); font-size: 12px; text-align: center; }
     .query-note {
       margin: 18px 0 0;
       color: rgba(255,255,255,.48);
@@ -470,6 +472,7 @@
           </div>
           <button class="primary-btn" id="queryButton" type="submit">查看成绩报告</button>
           <div class="error" id="errorText" role="alert" aria-live="polite"></div>
+          <noscript><p class="query-js-warning">成绩解密需要 JavaScript，请开启后刷新页面。</p></noscript>
           <div class="query-helper"><span>支持学号、查询识别码或身份证号码</span><span>姓名与识别码需完全匹配</span></div>
         </form>
         <p class="query-note" id="queryHint">数据加密存储 · 成绩仅供学生本人及家长查阅 · 请勿在公共设备保存输入内容</p>
@@ -485,7 +488,7 @@
     "use strict";
     const STUDENTS = [];
     const CLASS_SUMMARY = {"className":"高二4班","students":48,"average":366.885416666667,"controlCount":1,"bachelorCount":23,"bachelorChange":11};
-    const BUILD_META = {"studentCount":48,"sourceFiles":["身份信息.xlsx","班级划线.xlsx","班级上线人数对比.xlsx","物理类4班全部科目小题得分_含知识点.xlsx","年级成绩.xlsx","多次考试分析.xlsx"],"generatedAt":"2026-07-16T12:45:11.778Z"};
+    const BUILD_META = {"studentCount":48,"examCount":6,"className":"高二4班","latestExam":"高二下零诊","latestExamId":"legacy-zero","dataVersion":"legacy-20260716","sourceFiles":["身份信息.xlsx","班级划线.xlsx","班级上线人数对比.xlsx","物理类4班全部科目小题得分_含知识点.xlsx","年级成绩.xlsx","多次考试分析.xlsx"],"generatedAt":"2026-07-16T12:45:11.778Z"};
 
     const SUBJECTS = [
       { key: "chinese", name: "语文", max: 150 },
@@ -551,33 +554,29 @@
 
     let dataBundlePromise = null;
     let versionInfoPromise = null;
-    let activeDataMeta = { ...BUILD_META, schemaVersion: 1, dataVersion: "legacy" };
+    let activeDataMeta = { ...BUILD_META, schemaVersion: 1, dataVersion: BUILD_META.dataVersion || "legacy" };
+    let chartObserver = null;
 
     async function sha256Hex(value) {
       const digest = await crypto.subtle.digest("SHA-256", textEncoder.encode(value));
       return bytesToHex(new Uint8Array(digest));
     }
 
-    async function fetchResourceWithTimeout(url, timeout = 9000) {
+    async function fetchTextWithTimeout(url, timeout = 9000) {
       const controller = new AbortController();
       const timer = window.setTimeout(() => controller.abort(), timeout);
       try {
         const response = await fetch(url, { cache: "no-store", signal: controller.signal });
         if (!response.ok) return null;
-        return response;
+        return await response.text();
       } finally {
         window.clearTimeout(timer);
       }
     }
 
     async function fetchJsonWithTimeout(url, timeout = 9000) {
-      const response = await fetchResourceWithTimeout(url, timeout);
-      return response ? response.json() : null;
-    }
-
-    async function fetchTextWithTimeout(url, timeout = 9000) {
-      const response = await fetchResourceWithTimeout(url, timeout);
-      return response ? response.text() : null;
+      const text = await fetchTextWithTimeout(url, timeout);
+      return text == null ? null : JSON.parse(text);
     }
 
     function applyLandingMeta(meta) {
@@ -592,11 +591,17 @@
     function loadVersionInfo() {
       if (!versionInfoPromise) {
         versionInfoPromise = fetchJsonWithTimeout(`data/version.json?v=${Date.now()}`).then((version) => {
-          if (version?.kind !== "grade-query-version" || version.schemaVersion !== 2) return null;
+          if (version?.kind !== "grade-query-version" || version.schemaVersion !== 2) {
+            versionInfoPromise = null;
+            return null;
+          }
           activeDataMeta = { ...activeDataMeta, ...version };
           applyLandingMeta(version);
           return version;
-        }).catch(() => null);
+        }).catch(() => {
+          versionInfoPromise = null;
+          return null;
+        });
       }
       return versionInfoPromise;
     }
@@ -607,7 +612,15 @@
           loadVersionInfo(),
           fetchTextWithTimeout(`data/grade-data.v2.json?v=${Date.now()}`),
         ]).then(async ([version, rawBundle]) => {
-          if (!rawBundle) return null;
+          if (!rawBundle) {
+            if (version) {
+              versionInfoPromise = null;
+              const updating = new Error("成绩数据文件尚未同步完成。");
+              updating.code = "DATA_UPDATING";
+              throw updating;
+            }
+            return null;
+          }
           let bundle;
           try { bundle = JSON.parse(rawBundle); }
           catch (error) {
@@ -627,6 +640,7 @@
           }
           const actualHash = await sha256Hex(JSON.stringify(bundle));
           if (actualHash !== version.bundleSha256 || (version.dataVersion && version.dataVersion !== bundle.dataVersion)) {
+            versionInfoPromise = null;
             const updating = new Error("成绩数据正在更新，版本尚未同步完成。");
             updating.code = "DATA_UPDATING";
             throw updating;
@@ -687,7 +701,7 @@
       const secret = `${name.trim()}|${id.replace(/\s+/g, "").trim().toUpperCase()}`;
       const v2Id = await sha256Hex(`grade-query-v2|${secret}`);
       const bundle = await loadDataBundle();
-      if (bundle?.records?.[v2Id]) return decryptRecord(secret, bundle.records[v2Id]);
+      if (bundle) return bundle.records?.[v2Id] ? decryptRecord(secret, bundle.records[v2Id]) : null;
       const legacyId = await sha256Hex(`grade-query-v1|${secret}`);
       const encrypted = await fetchJsonWithTimeout(`data/${legacyId}.json`);
       if (!encrypted) return null;
@@ -699,9 +713,13 @@
       const name = nameInput.value.trim();
       const id = idInput.value.replace(/\s+/g, "").trim().toUpperCase();
       errorText.textContent = "";
+      nameInput.removeAttribute("aria-invalid");
+      idInput.removeAttribute("aria-invalid");
       if (!name || !id) {
         errorText.textContent = "请同时填写学生姓名和完整身份证号码 / 查询识别码";
-        (!name ? nameInput : idInput).focus();
+        const missingInput = !name ? nameInput : idInput;
+        missingInput.setAttribute("aria-invalid", "true");
+        missingInput.focus();
         return;
       }
       if (!window.crypto?.subtle || !window.isSecureContext) {
@@ -714,7 +732,9 @@
       try {
         const student = await loadStudent(name, id);
         if (!student) {
-          errorText.textContent = "姓名或身份证号码不匹配，请重新核对";
+          errorText.textContent = "姓名或查询识别信息不匹配，请重新核对";
+          nameInput.setAttribute("aria-invalid", "true");
+          idInput.setAttribute("aria-invalid", "true");
           return;
         }
         if (!student.current) {
@@ -748,7 +768,11 @@
     }
 
     [nameInput, idInput].forEach((input) => {
-      input.addEventListener("input", () => syncClearButton(input));
+      input.addEventListener("input", () => {
+        syncClearButton(input);
+        input.removeAttribute("aria-invalid");
+        errorText.textContent = "";
+      });
       input.addEventListener("keydown", (event) => {
         if (event.key === "Enter" && input === nameInput && idInput.value.trim() === "") {
           event.preventDefault();
@@ -767,6 +791,7 @@
         errorText.textContent = "";
       });
     });
+    applyLandingMeta(activeDataMeta);
     loadVersionInfo();
 
     function subjectRows(student) {
@@ -943,7 +968,7 @@
           </section>
           <section class="panel fade-in">
             <div class="panel-head"><div><h2 class="panel-title">本次观察</h2><p class="panel-subtitle">从成绩中提取三条最值得关注的信息</p></div></div>
-            <div class="insights">${insights.map((item, index) => `<article class="insight"><span class="insight-index">0${index + 1}</span><h4>${item.title}</h4><p>${item.text}</p></article>`).join("")}</div>
+            <div class="insights">${insights.map((item, index) => `<article class="insight"><span class="insight-index">0${index + 1}</span><h4>${escapeHtml(item.title)}</h4><p>${escapeHtml(item.text)}</p></article>`).join("")}</div>
           </section>
         </div>
 
@@ -993,20 +1018,28 @@
         try { drawTrend(student, "total"); }
         catch (error) { console.error(error); }
       });
+      if (chartObserver) {
+        chartObserver.disconnect();
+        chartObserver = null;
+      }
       if (window.ResizeObserver) {
         const chart = document.getElementById("trendCanvas");
-        const observer = new ResizeObserver(() => {
+        chartObserver = new ResizeObserver(() => {
           const active = reportShell.querySelector("[data-trend].active");
           if (active && document.body.contains(chart)) {
             try { drawTrend(student, active.dataset.trend); }
             catch (error) { console.error(error); }
           }
         });
-        observer.observe(chart.parentElement);
+        chartObserver.observe(chart.parentElement);
       }
     }
 
     function resetQuery() {
+      if (chartObserver) {
+        chartObserver.disconnect();
+        chartObserver = null;
+      }
       reportView.hidden = true;
       queryView.hidden = false;
       reportShell.innerHTML = "";
@@ -1015,6 +1048,8 @@
       syncClearButton(nameInput);
       syncClearButton(idInput);
       errorText.textContent = "";
+      nameInput.removeAttribute("aria-invalid");
+      idInput.removeAttribute("aria-invalid");
       window.scrollTo(0, 0);
       nameInput.focus();
     }

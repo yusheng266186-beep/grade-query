@@ -16,6 +16,7 @@
 - `publisher.html`：模板导入、校验、合并、加密和 GitHub 一键发布；
 - data/ 数据资源目录；
 - `templates/`：Excel、CSV、JSON 三种输入模板；
+- `guide.html`：面向老师的图文发布与模板填写说明；
 - `docs/INPUT_FORMAT.md`：字段和更新流程说明；
 - 家长查询二维码图片；
 - GitHub Pages 静态部署文件。
@@ -43,7 +44,7 @@
 5. 输入只允许修改 `yusheng266186-beep/grade-query` 内容的 Fine-grained Token，点击“一键上传并发布”。工作台会把 `data/grade-data.v2.json` 和 `data/version.json` 作为一个提交上传到 `main`，GitHub Pages 随后自动刷新。
 6. 把页面地址发给家长：<https://yusheng266186-beep.github.io/grade-query/>。
 
-项目备份是下一次合并历史考试所需的明文工作文件，只保存在本地，不上传到 GitHub。具体字段见 [输入格式说明](docs/INPUT_FORMAT.md)。
+项目备份是下一次合并历史考试所需的明文工作文件，只保存在本地，不上传到 GitHub。日常操作见 [图文使用说明](guide.html)，完整字段定义见 [输入格式说明](docs/INPUT_FORMAT.md)。
 
 ## 使用方式
 
@@ -69,6 +70,7 @@
     ├── index.html          # 查询页、报告页和页面交互
     ├── publisher.html      # 成绩发布工作台
     ├── publisher.css/js    # 发布工作台样式和逻辑
+    ├── guide.html          # 图文使用说明
     ├── data/               # 查询所需的数据资源
     ├── templates/          # Excel / CSV / JSON 输入模板
     ├── docs/               # 输入格式说明
