@@ -7,7 +7,7 @@
   <meta name="theme-color" content="#173c4b">
   <meta name="robots" content="noindex,nofollow,noarchive">
   <meta http-equiv="Cache-Control" content="no-store, max-age=0">
-  <title>高二4班 · 零诊成绩报告</title>
+  <title>个人成绩查询</title>
   <style>
     :root {
       --ink: #172733;
@@ -455,9 +455,9 @@
       <div class="query-shell fade-in">
         <div class="brand-mark"><span class="brand-seal">荣</span><span>荣县一中 · 高2024级</span></div>
         <header class="query-heading">
-          <p class="query-kicker">阶段成长记录</p>
-          <h1>零诊成绩报告</h1>
-          <p>看清当下，也看见这一路的变化</p>
+          <p class="query-kicker" id="queryKicker">阶段成长记录</p>
+          <h1 id="queryTitle">个人成绩查询</h1>
+          <p id="querySubtitle">看清当下，也看见这一路的变化</p>
         </header>
         <form class="query-card" id="queryForm" novalidate aria-describedby="queryHint">
           <div class="field">
@@ -512,6 +512,9 @@
     const idInput = document.getElementById("idInput");
     const errorText = document.getElementById("errorText");
     const queryButton = document.getElementById("queryButton");
+    const queryKicker = document.getElementById("queryKicker");
+    const queryTitle = document.getElementById("queryTitle");
+    const querySubtitle = document.getElementById("querySubtitle");
 
     const escapeHtml = (value) => String(value ?? "")
       .replace(/&/g, "&amp;")
@@ -547,6 +550,7 @@
     const base64ToBytes = (value) => Uint8Array.from(atob(value), (char) => char.charCodeAt(0));
 
     let dataBundlePromise = null;
+    let versionInfoPromise = null;
     let activeDataMeta = { ...BUILD_META, schemaVersion: 1, dataVersion: "legacy" };
 
     async function sha256Hex(value) {
@@ -554,22 +558,85 @@
       return bytesToHex(new Uint8Array(digest));
     }
 
-    async function fetchJsonWithTimeout(url, timeout = 9000) {
+    async function fetchResourceWithTimeout(url, timeout = 9000) {
       const controller = new AbortController();
       const timer = window.setTimeout(() => controller.abort(), timeout);
       try {
         const response = await fetch(url, { cache: "no-store", signal: controller.signal });
         if (!response.ok) return null;
-        return await response.json();
+        return response;
       } finally {
         window.clearTimeout(timer);
       }
     }
 
+    async function fetchJsonWithTimeout(url, timeout = 9000) {
+      const response = await fetchResourceWithTimeout(url, timeout);
+      return response ? response.json() : null;
+    }
+
+    async function fetchTextWithTimeout(url, timeout = 9000) {
+      const response = await fetchResourceWithTimeout(url, timeout);
+      return response ? response.text() : null;
+    }
+
+    function applyLandingMeta(meta) {
+      if (!meta?.latestExam) return;
+      const reportTitle = `${meta.latestExam}成绩报告`;
+      queryTitle.textContent = reportTitle;
+      queryKicker.textContent = meta.className ? `${meta.className} · 阶段成长记录` : "阶段成长记录";
+      querySubtitle.textContent = meta.examCount > 1 ? `已收录 ${meta.examCount} 场考试，看清当下，也看见变化` : "看清当下，也看见这一路的变化";
+      document.title = `${reportTitle} · ${meta.className || "成绩查询"}`;
+    }
+
+    function loadVersionInfo() {
+      if (!versionInfoPromise) {
+        versionInfoPromise = fetchJsonWithTimeout(`data/version.json?v=${Date.now()}`).then((version) => {
+          if (version?.kind !== "grade-query-version" || version.schemaVersion !== 2) return null;
+          activeDataMeta = { ...activeDataMeta, ...version };
+          applyLandingMeta(version);
+          return version;
+        }).catch(() => null);
+      }
+      return versionInfoPromise;
+    }
+
     function loadDataBundle() {
       if (!dataBundlePromise) {
-        dataBundlePromise = fetchJsonWithTimeout(`data/grade-data.v2.json?v=${Date.now()}`).then((bundle) => {
-          if (bundle?.kind !== "grade-query-bundle" || bundle.schemaVersion !== 2) return null;
+        const task = Promise.all([
+          loadVersionInfo(),
+          fetchTextWithTimeout(`data/grade-data.v2.json?v=${Date.now()}`),
+        ]).then(async ([version, rawBundle]) => {
+          if (!rawBundle) return null;
+          let bundle;
+          try { bundle = JSON.parse(rawBundle); }
+          catch (error) {
+            const invalid = new Error("成绩数据文件格式异常，请联系老师重新发布。");
+            invalid.code = "DATA_INVALID";
+            throw invalid;
+          }
+          if (bundle?.kind !== "grade-query-bundle" || bundle.schemaVersion !== 2) {
+            const invalid = new Error("成绩数据文件版本无法识别，请联系老师重新发布。");
+            invalid.code = "DATA_INVALID";
+            throw invalid;
+          }
+          if (!version?.bundleSha256) {
+            const updating = new Error("成绩数据版本文件尚未同步完成。");
+            updating.code = "DATA_UPDATING";
+            throw updating;
+          }
+          const actualHash = await sha256Hex(JSON.stringify(bundle));
+          if (actualHash !== version.bundleSha256 || (version.dataVersion && version.dataVersion !== bundle.dataVersion)) {
+            const updating = new Error("成绩数据正在更新，版本尚未同步完成。");
+            updating.code = "DATA_UPDATING";
+            throw updating;
+          }
+          const recordCount = Object.keys(bundle.records || {}).length;
+          if (!bundle.records || recordCount !== bundle.recordCount || recordCount !== bundle.studentCount) {
+            const invalid = new Error("成绩数据记录数量校验失败，请联系老师重新发布。");
+            invalid.code = "DATA_INVALID";
+            throw invalid;
+          }
           activeDataMeta = {
             ...activeDataMeta,
             schemaVersion: bundle.schemaVersion,
@@ -579,8 +646,16 @@
             examCount: bundle.examCount,
             latestExam: bundle.latestExam,
           };
+          applyLandingMeta(activeDataMeta);
           return bundle;
-        }).catch(() => null);
+        });
+        dataBundlePromise = task.then((bundle) => {
+          if (!bundle) dataBundlePromise = null;
+          return bundle;
+        }).catch((error) => {
+          dataBundlePromise = null;
+          throw error;
+        });
       }
       return dataBundlePromise;
     }
@@ -643,7 +718,7 @@
           return;
         }
         if (!student.current) {
-          errorText.textContent = "该学生暂未匹配到零诊成绩";
+          errorText.textContent = `该学生暂未匹配到${activeDataMeta.latestExam || "本次考试"}成绩`;
           return;
         }
         renderReport(student);
@@ -651,7 +726,13 @@
         console.error(error);
         queryView.hidden = false;
         reportView.hidden = true;
-        errorText.textContent = error?.name === "AbortError" ? "读取超时，请检查网络后重试。" : "查询失败，请检查网络后重试，或确认姓名和查询识别码。";
+        errorText.textContent = error?.code === "DATA_UPDATING"
+          ? "成绩数据正在更新，请稍等一分钟后刷新页面再查询。"
+          : error?.code === "DATA_INVALID"
+            ? "成绩数据文件异常，请联系老师重新发布。"
+            : error?.name === "AbortError"
+              ? "读取超时，请检查网络后重试。"
+              : "查询失败，请检查网络后重试，或确认姓名和查询识别码。";
       } finally {
         queryButton.disabled = false;
         queryButton.textContent = "查看成绩报告";
@@ -686,6 +767,7 @@
         errorText.textContent = "";
       });
     });
+    loadVersionInfo();
 
     function subjectRows(student) {
       return SUBJECTS.map((subject) => {
@@ -722,50 +804,61 @@
     }
 
     function createInsights(student) {
-      const pairs = SUBJECTS.map((subject) => ({ ...subject, ...(student.current.subjects?.[subject.key] || {}) }));
-      const strongest = [...pairs].sort((a, b) => (b.controlDiff ?? -999) - (a.controlDiff ?? -999)).slice(0, 2);
-      const belowControl = pairs.filter((item) => item.controlDiff < 0).sort((a, b) => Math.abs(a.controlDiff) - Math.abs(b.controlDiff));
-      const belowBachelor = pairs.filter((item) => item.bachelorDiff < 0).sort((a, b) => Math.abs(a.bachelorDiff) - Math.abs(b.bachelorDiff));
+      const pairs = SUBJECTS.map((subject) => ({ ...subject, ...(student.current.subjects?.[subject.key] || {}) }))
+        .filter((item) => number(item.score) != null || number(item.controlDiff) != null || number(item.bachelorDiff) != null)
+        .map((item) => ({ ...item, strength: number(item.controlDiff) ?? (number(item.score) == null ? -999 : (number(item.score) / item.max) * 100) }));
+      const strongest = [...pairs].sort((a, b) => b.strength - a.strength).slice(0, 2);
+      const belowControl = pairs.filter((item) => number(item.controlDiff) != null && number(item.controlDiff) < 0).sort((a, b) => Math.abs(a.controlDiff) - Math.abs(b.controlDiff));
+      const belowBachelor = pairs.filter((item) => number(item.bachelorDiff) != null && number(item.bachelorDiff) < 0).sort((a, b) => Math.abs(a.bachelorDiff) - Math.abs(b.bachelorDiff));
       const focus = belowControl[0] ?? belowBachelor[0] ?? strongest[0];
       const exams = (student.exams || []).filter((exam) => number(exam.total) != null);
       const latest = exams[exams.length - 1];
       const previous = exams[exams.length - 2];
-      const lastCity = [...exams].reverse().find((exam) => exam.scope === "city" && exam.name !== latest?.name);
-      const scoreChange = latest && previous ? latest.total - previous.total : null;
-      const cityRankChange = latest && lastCity && latest.rank && lastCity.rank ? lastCity.rank - latest.rank : null;
-      const cityRankText = cityRankChange == null
+      const previousSameScope = latest ? [...exams.slice(0, -1)].reverse().find((exam) => exam.scope === latest.scope && number(exam.rank) != null) : null;
+      const scoreChange = latest && previous ? number(latest.total) - number(previous.total) : null;
+      const rankChange = latest && previousSameScope && number(latest.rank) != null ? number(previousSameScope.rank) - number(latest.rank) : null;
+      const scopeName = latest?.scope === "city" ? "市排名" : latest?.scope === "class" ? "班级排名" : "校排名";
+      const rankText = rankChange == null
         ? ""
-        : cityRankChange > 0
-          ? `；较上次市级统考前进${cityRankChange}名。`
-          : cityRankChange < 0
-            ? `；较上次市级统考后移${Math.abs(cityRankChange)}名。`
-            : "；与上次市级统考排名持平。";
+        : rankChange > 0
+          ? `；同口径${scopeName}前进${rankChange}名。`
+          : rankChange < 0
+            ? `；同口径${scopeName}后移${Math.abs(rankChange)}名。`
+            : `；同口径${scopeName}保持不变。`;
       const focusText = !focus
         ? "当前报告没有足够的科目线数据生成分析。"
-        : focus.controlDiff < 0 && focus.bachelorDiff >= 0
+        : number(focus.controlDiff) == null && number(focus.bachelorDiff) == null
+          ? `${focus.name}是当前得分率相对较高的学科；补充科目线后可进一步判断达线情况。`
+        : number(focus.controlDiff) < 0 && number(focus.bachelorDiff) != null && number(focus.bachelorDiff) >= 0
         ? `${focus.name}已达本科有效分，距离特控有效分${Math.abs(focus.controlDiff).toFixed(1)}分。`
-        : focus.bachelorDiff < 0
+        : number(focus.bachelorDiff) != null && number(focus.bachelorDiff) < 0
           ? `${focus.name}距离本科有效分${Math.abs(focus.bachelorDiff).toFixed(1)}分，是当前较接近的突破点。`
+          : number(focus.controlDiff) != null && number(focus.controlDiff) < 0
+            ? `${focus.name}距离特控有效分${Math.abs(focus.controlDiff).toFixed(1)}分。`
           : `${focus.name}目前处于较稳定的上线区间。`;
+      const latestName = latest?.name || student.currentExam?.examName || "本次考试";
+      const previousName = previous?.name || "上一次考试";
       return [
-        { title: "优势表现", text: `${strongest.map((item) => item.name).join("、")}是本次相对表现更突出的学科。` },
+        { title: "优势表现", text: strongest.length ? `${strongest.map((item) => item.name).join("、")}是本次相对表现更突出的学科。` : "当前科目数据不足，暂不生成优势学科判断。" },
         { title: "关注方向", text: focusText },
-        { title: "阶段变化", text: scoreChange == null ? "目前只收录到零诊成绩，暂无足够的历次数据生成趋势结论。" : `零诊总分较上一次考试${scoreChange >= 0 ? "上升" : "下降"}${Math.abs(scoreChange).toFixed(1)}分${cityRankText || "。"}` },
+        { title: "阶段变化", text: scoreChange == null ? `${latestName}是当前收录的第一场考试，后续发布后会自动形成趋势。` : `${latestName}总分较${previousName}${scoreChange >= 0 ? "上升" : "下降"}${Math.abs(scoreChange).toFixed(1)}分${rankText || "。"}` },
       ];
     }
 
     function rankTimeline(student) {
       return (student.exams || []).map((exam) => {
-        const isCity = exam.scope === "city";
-        const zeroExtra = exam.name.includes("零诊")
-          ? `<div class="zero-ranks">校内第 ${fmt(student.current.schoolRank, 0)} 名<br>班级第 ${fmt(student.current.classRank, 0)} 名</div>`
-          : "";
+        const scope = exam.scope === "city" ? { label: "市排名", cls: "scope-city", key: "cityRank" } : exam.scope === "class" ? { label: "班排名", cls: "scope-school", key: "classRank" } : { label: "校排名", cls: "scope-school", key: "schoolRank" };
+        const extra = [["市", exam.cityRank], ["校", exam.schoolRank], ["班", exam.classRank]]
+          .filter(([label, value]) => number(value) != null && !((label === "市" && scope.key === "cityRank") || (label === "校" && scope.key === "schoolRank") || (label === "班" && scope.key === "classRank")))
+          .slice(0, 2)
+          .map(([label, value]) => `${label}第 ${fmt(value, 0)} 名`)
+          .join(" · ");
         return `
           <div class="rank-stop">
-            <span class="scope-tag ${isCity ? "scope-city" : "scope-school"}">${isCity ? "市排名" : "校排名"}</span>
+            <span class="scope-tag ${scope.cls}">${scope.label}</span>
             <strong>第 ${fmt(exam.rank, 0)} 名</strong>
             <p>${escapeHtml(EXAM_SHORT[exam.name] || exam.name)}</p>
-            ${zeroExtra}
+            ${extra ? `<div class="zero-ranks">${escapeHtml(extra)}</div>` : ""}
           </div>`;
       }).join("");
     }
@@ -801,7 +894,8 @@
 
     function renderReport(student) {
       const current = student.current;
-      const currentExamName = student.currentExam?.examName || "高二下零诊";
+      const currentExamName = student.currentExam?.examName || activeDataMeta.latestExam || "本次考试";
+      const examCount = (student.exams || []).length;
       const overall = statusFor(current.controlDiff, current.bachelorDiff);
       const insights = createInsights(student);
       const trendButtons = [{ key: "total", name: "总分" }, ...SUBJECTS].map((subject, index) =>
@@ -855,7 +949,7 @@
 
         <section class="panel trend-panel fade-in">
           <div class="panel-head">
-            <div><h2 class="panel-title">阶段成绩变化</h2><p class="panel-subtitle">选择科目查看六次考试的分数走势</p></div>
+            <div><h2 class="panel-title">阶段成绩变化</h2><p class="panel-subtitle">选择科目查看${examCount || "历次"}场考试的分数走势</p></div>
             <div class="trend-tabs">${trendButtons}</div>
           </div>
           <div class="chart-wrap"><canvas id="trendCanvas" role="img" aria-label="历次成绩折线图"></canvas><div class="chart-tooltip" id="chartTooltip" hidden></div><div class="chart-empty" id="chartEmpty" hidden>历次数据不足，暂不绘制趋势线</div></div>
@@ -863,7 +957,7 @@
         </section>
 
         <section class="panel trend-panel fade-in">
-          <div class="panel-head"><div><h2 class="panel-title">历次排名记录</h2><p class="panel-subtitle">期末与零诊为全市排名，其余考试为校内排名，两种范围不直接比较</p></div></div>
+          <div class="panel-head"><div><h2 class="panel-title">历次排名记录</h2><p class="panel-subtitle">每场考试按模板中的排名范围展示，不同范围不直接比较</p></div></div>
           <div class="rank-timeline">${rankingHtml}</div>
         </section>
 
@@ -878,7 +972,7 @@
           </details>
         </div>
 
-        <p class="source-note">数据版本 ${escapeHtml(activeDataMeta.dataVersion || "legacy")} · 生成于 ${escapeHtml(activeDataMeta.generatedAt || "—")}。<br>排名范围不同，请结合“市排名 / 校排名 / 班级排名”标签阅读。</p>
+        <p class="source-note">数据版本 ${escapeHtml(activeDataMeta.releaseId || activeDataMeta.dataVersion || "legacy")} · 生成于 ${escapeHtml(activeDataMeta.generatedAt || "—")}。<br>排名范围不同，请结合“市排名 / 校排名 / 班级排名”标签阅读。</p>
         <div class="report-actions" aria-label="报告操作"><button class="ghost-btn" type="button" id="reportTopButton">回到顶部</button><button class="ghost-btn report-action-main" type="button" id="backButtonBottom">继续查询</button></div>`;
 
       queryView.hidden = true;

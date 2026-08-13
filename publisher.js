@@ -10,6 +10,8 @@ const SUBJECTS = [
 ];
 
 const EMPTY_MARKERS = new Set(["", "—", "-", "--", "无", "暂无", "null", "undefined", "nan", "/"]);
+const MAX_EXAM_FILE_BYTES = 12 * 1024 * 1024;
+const MAX_PROJECT_FILE_BYTES = 24 * 1024 * 1024;
 const state = {
   exam: null,
   project: null,
@@ -491,6 +493,8 @@ function validateExam(exam) {
   if (!meta.className) errors.push("班级名称不能为空。");
   if (!meta.examDate) warnings.push("未填写考试日期，历次趋势会按导入顺序保留。");
   if (!exam.students.length) errors.push("没有可识别的学生记录。");
+  const sampleStudents = exam.students.filter((student) => /^TEST\d+$/i.test(student.studentId) || /示例学生|测试学生/.test(student.name));
+  if (sampleStudents.length) errors.push(`检测到 ${sampleStudents.length} 条模板示例学生，请删除示例行并填入正式数据后再发布。`);
   if (meta.controlLine == null) warnings.push("未填写总分特控线，将不显示总分特控线差。");
   if (meta.bachelorLine == null) warnings.push("未填写总分本科线，将不显示总分本科线差。");
   const ids = new Set();
@@ -529,16 +533,16 @@ function validateExam(exam) {
 function getMergePreview(exam) {
   const history = Array.isArray(state.project?.exams) ? state.project.exams : [];
   const replacement = Boolean(exam?.exam?.examId && history.some((item) => item.examId === exam.exam.examId));
-  const studentIds = new Set((state.project?.students || []).map((student) => canonicalStudentId(student.studentId)).filter(Boolean));
-  for (const student of exam?.students || []) {
-    const id = canonicalStudentId(student.studentId);
-    if (id) studentIds.add(id);
-  }
+  const historicalIds = new Set((state.project?.students || []).map((student) => canonicalStudentId(student.studentId)).filter(Boolean));
+  const currentIds = new Set((exam?.students || []).map((student) => canonicalStudentId(student.studentId)).filter(Boolean));
+  const studentIds = new Set([...historicalIds, ...currentIds]);
   return {
     historyCount: history.length,
     examCount: history.length + (replacement ? 0 : 1),
     studentCount: studentIds.size,
     replacement,
+    newStudentCount: [...currentIds].filter((id) => !historicalIds.has(id)).length,
+    missingStudentCount: [...historicalIds].filter((id) => !currentIds.has(id)).length,
   };
 }
 
@@ -558,7 +562,7 @@ function renderMergePreview(exam) {
   $("mergePreviewCopy").textContent = summary.replacement
     ? `项目备份中已经存在“${exam.exam.examName || exam.exam.examId}”。本次会覆盖这一场考试，其他 ${Math.max(0, summary.historyCount - 1)} 场历史记录保持不变。`
     : state.project
-      ? `本次会新增一场考试，并为 ${exam.students.length} 条当前记录更新个人报告；已有历史趋势会继续保留。`
+      ? `本次会新增一场考试，并为 ${exam.students.length} 条当前记录更新个人报告；新增学生 ${summary.newStudentCount} 人，本次未出现的历史学生 ${summary.missingStudentCount} 人。`
       : "这是第一次建立发布项目；生成项目备份后，下次考试即可继续累计趋势。";
   preview.hidden = false;
 }
@@ -646,6 +650,15 @@ function renderReview() {
   if (state.projectWarnings.length) result.warnings.unshift(...state.projectWarnings);
   const merge = getMergePreview(state.exam);
   if (merge.replacement) result.warnings.unshift(`项目备份中已有考试编号 ${state.exam.exam.examId}，生成时会覆盖该场考试。`);
+  if (state.project && merge.missingStudentCount) result.warnings.unshift(`本次模板未包含 ${merge.missingStudentCount} 位历史学生；他们的历史报告会保留，但不会新增本次考试记录。`);
+  if (state.project) {
+    const historicalNames = new Map((state.project.students || []).map((student) => [canonicalStudentId(student.studentId), normalizeText(student.name)]));
+    const changedNames = state.exam.students.filter((student) => {
+      const previousName = historicalNames.get(canonicalStudentId(student.studentId));
+      return previousName && student.name && previousName !== normalizeText(student.name);
+    });
+    if (changedNames.length) result.warnings.unshift(`有 ${changedNames.length} 位学生的查询识别码与历史项目相同、姓名不同；生成后会以本次模板姓名为准，请确认不是学号错配。`);
+  }
   renderMergePreview(state.exam);
   renderMessages(result);
   renderPreview(state.exam, result);
@@ -665,6 +678,7 @@ function renderReview() {
 }
 
 async function readExamFile(file) {
+  if (file.size > MAX_EXAM_FILE_BYTES) throw new Error(`考试文件超过 12 MB（当前 ${(file.size / 1024 / 1024).toFixed(1)} MB），请删除无关图片、格式或工作表后重试。`);
   const name = file.name.toLowerCase();
   if (name.endsWith(".json")) return normalizeExam(JSON.parse(await file.text()));
   if (name.endsWith(".csv")) return parseCsvExam(await file.text());
@@ -673,6 +687,8 @@ async function readExamFile(file) {
 }
 
 async function importExam(file) {
+  $("importState").textContent = "正在读取…";
+  $("importState").className = "panel-state muted";
   try {
     const exam = await readExamFile(file);
     invalidateGenerated();
@@ -687,14 +703,25 @@ async function importExam(file) {
     showToast("考试模板已导入，正在等待校验结果");
     $("step-review").scrollIntoView({ behavior: "smooth", block: "start" });
   } catch (error) {
-    showToast(error.message || "导入失败");
-    $("importState").textContent = "导入失败";
+    const message = error.message || "导入失败";
+    showToast(message);
+    $("importState").textContent = state.exam ? "原文件已保留" : "导入失败";
     $("importState").className = "panel-state muted";
+    if (state.exam) {
+      const result = validateExam(state.exam);
+      result.errors.unshift(`新文件导入失败，已保留当前文件：${message}`);
+      renderMessages(result);
+    } else {
+      messageStack.innerHTML = `<div class="message error"><b>导入失败</b><span>${escapeHtml(message)}</span></div>`;
+      messageStack.hidden = false;
+    }
+    examFile.value = "";
   }
 }
 
 async function importProject(file) {
   try {
+    if (file.size > MAX_PROJECT_FILE_BYTES) throw new Error(`项目备份超过 24 MB（当前 ${(file.size / 1024 / 1024).toFixed(1)} MB），请确认选择的是工作台生成的 JSON 备份。`);
     const payload = JSON.parse(await file.text());
     const check = validateProjectBackup(payload);
     if (check.errors.length) throw new Error(check.errors[0]);
@@ -707,7 +734,14 @@ async function importProject(file) {
     showToast(check.warnings.length ? `历史项目已载入，有 ${check.warnings.length} 条提醒` : "历史项目备份已载入；导入本次考试后会自动合并");
     if (state.exam) renderReview();
   } catch (error) {
-    showToast(error.message || "项目备份导入失败");
+    const message = error.message || "项目备份导入失败";
+    showToast(message);
+    projectFile.value = "";
+    if (state.exam) {
+      const result = validateExam(state.exam);
+      result.warnings.unshift(`项目备份未载入，当前考试仍可作为首次项目生成：${message}`);
+      renderMessages(result);
+    }
   }
 }
 
@@ -745,22 +779,43 @@ function base64ToText(value) {
 }
 
 async function githubRequest(url, token, options = {}) {
-  const response = await fetch(url, {
-    ...options,
-    headers: {
-      Accept: "application/vnd.github+json",
-      "X-GitHub-Api-Version": "2022-11-28",
-      Authorization: `Bearer ${token}`,
-      "Content-Type": "application/json",
-      ...(options.headers || {}),
-    },
-  });
-  const text = await response.text();
+  const controller = new AbortController();
+  const timer = window.setTimeout(() => controller.abort(), 25000);
+  let response;
+  let text;
+  try {
+    response = await fetch(url, {
+      ...options,
+      signal: controller.signal,
+      headers: {
+        Accept: "application/vnd.github+json",
+        "X-GitHub-Api-Version": "2022-11-28",
+        Authorization: `Bearer ${token}`,
+        "Content-Type": "application/json",
+        ...(options.headers || {}),
+      },
+    });
+    text = await response.text();
+  } catch (error) {
+    if (error?.name === "AbortError") throw new Error("GitHub 请求超过 25 秒，请检查网络后重试；尚未完成的提交不会覆盖原数据。");
+    throw new Error(`无法连接 GitHub：${error?.message || "网络请求失败"}`);
+  } finally {
+    window.clearTimeout(timer);
+  }
   let body = null;
   try { body = text ? JSON.parse(text) : null; } catch (error) { body = { message: text }; }
   if (!response.ok) {
     const detail = body?.message || `GitHub API ${response.status}`;
-    throw new Error(`${detail}（${response.status}）`);
+    const hint = response.status === 401
+      ? "Token 无效或已过期"
+      : response.status === 403
+        ? "Token 缺少 Contents 读写权限，或触发了 GitHub 访问限制"
+        : response.status === 404
+          ? "未找到仓库、分支或文件，请检查仓库地址和 Token 的仓库范围"
+          : response.status === 409 || response.status === 422
+            ? "仓库版本发生变化，请刷新工作台后重新生成并上传"
+            : "GitHub 返回了错误";
+    throw new Error(`${hint}：${detail}（${response.status}）`);
   }
   return body;
 }
@@ -840,7 +895,7 @@ async function uploadRelease() {
 function currentProject() {
   const result = validateExam(state.exam);
   if (result.errors.length) throw new Error("还有字段错误，暂时不能生成项目备份。");
-  return mergeExamIntoProject(state.project || projectFromExam(state.exam), state.exam);
+  return state.project ? mergeExamIntoProject(state.project, state.exam) : projectFromExam(state.exam);
 }
 
 function bytesToBase64(bytes) {
@@ -951,7 +1006,7 @@ async function generateRelease() {
     $("releaseManifest").hidden = false;
     $("downloadPanel").hidden = false;
     $("sideStatus").textContent = "已生成";
-    $("sideStatusCopy").textContent = "发布包已准备好，下载后覆盖仓库 data 目录中的同名文件。";
+    $("sideStatusCopy").textContent = "发布包已准备好：可一键上传到 GitHub，并请下载项目备份供下次考试继续合并。";
     $("progressBar").style.width = "100%";
     $("exportState").textContent = "生成完成";
     state.generated = { project, bundle, version };
