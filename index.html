@@ -787,6 +787,7 @@
         if (!input) return;
         input.value = "";
         syncClearButton(input);
+        input.removeAttribute("aria-invalid");
         input.focus();
         errorText.textContent = "";
       });
