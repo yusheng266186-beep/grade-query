@@ -1,0 +1,19 @@
+{
+  "kind": "grade-query-version",
+  "schemaVersion": 2,
+  "dataVersion": "v3-20260829",
+  "generatedAt": "2026-08-29T08:52:11.967Z",
+  "className": "高二4班",
+  "studentCount": 48,
+  "examCount": 6,
+  "latestExam": "高二下零诊",
+  "latestExamId": "legacy-zero",
+  "recordCount": 48,
+  "releaseId": "v3-20260829-1f3aeef05f9d",
+  "bundleSha256": "1f3aeef05f9db663c237e1a09ede86c0650acb9ee6236da40b01c7702751a6b3",
+  "generatedBy": "grade-query-headless-migration-v3",
+  "replaceFiles": [
+    "data/grade-data.v2.json",
+    "data/version.json"
+  ]
+}
