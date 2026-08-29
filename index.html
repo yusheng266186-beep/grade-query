@@ -484,11 +484,14 @@
     </section>
   </main>
 
+  <script src="shared-crypto.js?v=20260829-1"></script>
   <script>
     "use strict";
     const STUDENTS = [];
-    const CLASS_SUMMARY = {"className":"高二4班","students":48,"average":366.885416666667,"controlCount":1,"bachelorCount":23,"bachelorChange":11};
-    const BUILD_META = {"studentCount":48,"examCount":6,"className":"高二4班","latestExam":"高二下零诊","latestExamId":"legacy-zero","dataVersion":"legacy-20260716","generatedAt":"2026-07-16T12:45:11.778Z"};
+    // 班级聚合数据（平均分/上线人数等）不再硬编码在公开页面源码中：
+    // 这些数字只随学生本人的加密记录（classSummary 字段）在查询成功后展示。
+    const CLASS_SUMMARY = null;
+    const BUILD_META = {"examCount":6,"className":"高二4班","latestExam":"高二下零诊","latestExamId":"legacy-zero","dataVersion":"legacy-20260716","generatedAt":"2026-07-16T12:45:11.778Z"};
 
     const SUBJECTS = [
       { key: "chinese", name: "语文", max: 150 },
@@ -548,19 +551,15 @@
     };
     const diffClass = (value) => number(value) == null ? "diff-neutral" : number(value) >= 0 ? "diff-positive" : "diff-negative";
 
-    const textEncoder = new TextEncoder();
-    const bytesToHex = (bytes) => Array.from(bytes, (byte) => byte.toString(16).padStart(2, "0")).join("");
-    const base64ToBytes = (value) => Uint8Array.from(atob(value), (char) => char.charCodeAt(0));
+    // 加密与凭据归一化原语统一来自 shared-crypto.js（与发布工作台共用同一份实现）
+    const { sha256Hex, canonicalStudentName, canonicalQueryId, buildStudentSecret, deriveV3Keyring, decryptV3Record, decryptLegacyRecord } = window.GradeQueryCrypto;
 
     let dataBundlePromise = null;
     let versionInfoPromise = null;
     let activeDataMeta = { ...BUILD_META, schemaVersion: 1, dataVersion: BUILD_META.dataVersion || "legacy" };
     let chartObserver = null;
-
-    async function sha256Hex(value) {
-      const digest = await crypto.subtle.digest("SHA-256", textEncoder.encode(value));
-      return bytesToHex(new Uint8Array(digest));
-    }
+    let autoRetryTimer = null;
+    let autoRetryCount = 0;
 
     async function fetchTextWithTimeout(url, timeout = 9000) {
       const controller = new AbortController();
@@ -674,65 +673,6 @@
       return dataBundlePromise;
     }
 
-    async function decryptRecord(secret, encrypted) {
-      const material = await crypto.subtle.importKey(
-        "raw",
-        textEncoder.encode(secret),
-        "PBKDF2",
-        false,
-        ["deriveKey"],
-      );
-      const key = await crypto.subtle.deriveKey(
-        { name: "PBKDF2", salt: base64ToBytes(encrypted.salt), iterations: 240000, hash: "SHA-256" },
-        material,
-        { name: "AES-GCM", length: 256 },
-        false,
-        ["decrypt"],
-      );
-      const plaintext = await crypto.subtle.decrypt(
-        { name: "AES-GCM", iv: base64ToBytes(encrypted.iv) },
-        key,
-        base64ToBytes(encrypted.data),
-      );
-      return JSON.parse(new TextDecoder().decode(plaintext));
-    }
-
-    function canonicalStudentName(value) {
-      return String(value ?? "").normalize("NFKC").replace(/\s+/g, " ").trim();
-    }
-
-    function canonicalQueryId(value) {
-      return String(value ?? "").normalize("NFKC").replace(/\s+/g, "").trim().toUpperCase();
-    }
-
-    async function buildStudentSecret(name, id) {
-      return `${canonicalStudentName(name)}|${canonicalQueryId(id)}`;
-    }
-
-    // v3：记录地址与加密密钥同源于一次 PBKDF2(240000)。
-    // 猜测一次"姓名|识别码"必须先付满 240000 次迭代才能得到地址，
-    // 使离线枚举的验证成本与解密成本相同（v2 的裸 SHA-256 地址无此保护）。
-    async function deriveV3Keyring(secret) {
-      const salt = new Uint8Array(await crypto.subtle.digest("SHA-256", textEncoder.encode(`grade-query-v3-salt|${secret}`)));
-      const material = await crypto.subtle.importKey("raw", textEncoder.encode(secret), "PBKDF2", false, ["deriveBits"]);
-      const bits = new Uint8Array(await crypto.subtle.deriveBits(
-        { name: "PBKDF2", salt, iterations: 240000, hash: "SHA-256" },
-        material,
-        512,
-      ));
-      const encKey = await crypto.subtle.importKey("raw", bits.slice(32, 64), "AES-GCM", false, ["decrypt"]);
-      return { fileId: bytesToHex(bits.slice(0, 32)), encKey };
-    }
-
-    async function decryptV3Record(keyring, encrypted) {
-      const plaintext = await crypto.subtle.decrypt(
-        { name: "AES-GCM", iv: base64ToBytes(encrypted.iv) },
-        keyring.encKey,
-        base64ToBytes(encrypted.data),
-      );
-      return JSON.parse(new TextDecoder().decode(plaintext));
-    }
-
     async function loadStudent(name, id) {
       const secret = await buildStudentSecret(name, id);
       const bundle = await loadDataBundle();
@@ -742,17 +682,21 @@
         const v3Record = records[v3Keyring.fileId];
         if (v3Record && v3Record.v === 3) return decryptV3Record(v3Keyring, v3Record);
         const v2Id = await sha256Hex(`grade-query-v2|${secret}`);
-        if (records[v2Id]) return decryptRecord(secret, records[v2Id]);
+        if (records[v2Id]) return decryptLegacyRecord(secret, records[v2Id]);
         return null;
       }
       const legacyId = await sha256Hex(`grade-query-v1|${secret}`);
       const encrypted = await fetchJsonWithTimeout(`data/${legacyId}.json`);
       if (!encrypted) return null;
-      return decryptRecord(secret, encrypted);
+      return decryptLegacyRecord(secret, encrypted);
     }
 
     async function handleQuery(event) {
       if (event) event.preventDefault();
+      if (autoRetryTimer) {
+        window.clearTimeout(autoRetryTimer);
+        autoRetryTimer = null;
+      }
       const name = canonicalStudentName(nameInput.value);
       const id = canonicalQueryId(idInput.value);
       errorText.textContent = "";
@@ -785,10 +729,23 @@
           return;
         }
         renderReport(student);
+        autoRetryCount = 0;
       } catch (error) {
         console.error(error);
         queryView.hidden = false;
         reportView.hidden = true;
+        // Pages 双文件发布存在短暂的 CDN 缓存错位窗口（通常 1 分钟内自愈），
+        // 对家长最有用的做法是倒计时自动重试，而不是要求他们手动刷新。
+        if (error?.code === "DATA_UPDATING" && autoRetryCount < 2 && nameInput.value.trim() && idInput.value.trim()) {
+          autoRetryCount += 1;
+          const waitSeconds = 30;
+          errorText.textContent = `成绩数据正在更新，${waitSeconds} 秒后自动重试（第 ${autoRetryCount}/2 次）…`;
+          autoRetryTimer = window.setTimeout(() => {
+            autoRetryTimer = null;
+            if (nameInput.value.trim() && idInput.value.trim()) queryForm.requestSubmit();
+          }, waitSeconds * 1000);
+          return;
+        }
         errorText.textContent = error?.code === "DATA_UPDATING"
           ? "成绩数据正在更新，请稍等一分钟后刷新页面再查询。"
           : error?.code === "DATA_INVALID"

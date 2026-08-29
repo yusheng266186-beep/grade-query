@@ -124,6 +124,7 @@
             <div class="export-actions">
               <button class="button button-primary" id="generateButton" type="button" disabled>生成加密发布包</button>
               <button class="button button-secondary" id="backupButton" type="button" disabled>下载项目备份</button>
+              <button class="button button-secondary" id="generateIdsButton" type="button" disabled>为空/弱识别码生成随机码</button>
             </div>
             <div class="download-panel" id="downloadPanel" hidden>
               <div class="success-mark">✓</div><div><b>发布包已生成</b><p id="downloadSummary">—</p></div>
@@ -140,6 +141,7 @@
                 <label class="token-field"><span>Fine-grained Token</span><span class="token-input-wrap"><input id="githubToken" type="password" aria-label="Fine-grained Token" placeholder="github_pat_…" autocomplete="new-password" spellcheck="false"><button id="toggleTokenButton" type="button" aria-pressed="false">显示</button></span></label>
               </div>
               <div class="upload-actions"><button class="button button-primary" id="uploadButton" type="button" disabled>一键上传并发布</button><span class="upload-status" id="uploadStatus" role="status" aria-live="polite">生成加密发布包后可上传</span></div>
+              <label class="cleanup-toggle" style="display:flex;gap:6px;align-items:center;margin-top:8px;font-size:12px;color:inherit;cursor:pointer;"><input type="checkbox" id="cleanupLegacyToggle" checked>随本次发布删除旧版数据文件（v1 明文寻址，发布 v3 后不再需要；推荐勾选）</label>
               <div class="pages-result" id="pagesResult" hidden><span class="success-mark">↗</span><div><b id="pagesResultTitle">Pages 正在更新</b><p id="pagesResultText">—</p><a id="pagesLink" href="#" target="_blank" rel="noreferrer">打开成绩查询页面 ↗</a><a id="commitLink" href="#" target="_blank" rel="noreferrer">查看本次提交 ↗</a></div></div>
               <details class="token-help"><summary>Token 需要什么权限？</summary><p>创建 Fine-grained Token 时，将 Repository access 限定为 <code>yusheng266186-beep/grade-query</code>，Repository permissions 只开启 <b>Contents: Read and write</b>。如果仓库启用了严格的 Pages 管理权限，再额外开启 Pages: Read；本工作台不会把 Token 保存到仓库。</p><a href="https://github.com/settings/personal-access-tokens/new" target="_blank" rel="noreferrer">打开 GitHub Token 创建页 ↗</a></details>
             </div>
@@ -178,8 +180,9 @@
 
   <div class="toast" id="toast" role="status" aria-live="polite"></div>
   <noscript><p class="noscript-note">此工作台需要 JavaScript 才能读取模板和生成加密发布包，请开启 JavaScript 后刷新页面。</p></noscript>
+  <script src="shared-crypto.js?v=20260829-1"></script>
   <script src="vendor/xlsx.full.min.js?v=20260829-1"></script>
   <script src="vendor/jszip.min.js?v=20260829-1"></script>
-  <script src="publisher.js?v=20260829-1" defer></script>
+  <script src="publisher.js?v=20260829-2" defer></script>
 </body>
 </html>

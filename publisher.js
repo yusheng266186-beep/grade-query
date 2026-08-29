@@ -12,6 +12,13 @@ const SUBJECTS = [
 const EMPTY_MARKERS = new Set(["", "—", "-", "--", "无", "暂无", "null", "undefined", "nan", "/"]);
 const MAX_EXAM_FILE_BYTES = 12 * 1024 * 1024;
 const MAX_PROJECT_FILE_BYTES = 24 * 1024 * 1024;
+// 加密与凭据归一化原语统一来自 shared-crypto.js（与查询页共用同一份实现）
+const { sha256Hex, canonicalStudentName, canonicalStudentId, encryptV3Record } = window.GradeQueryCrypto;
+
+// 弱识别码：空 / ≤10 位纯数字 / 疑似身份证号——都会被发布校验提醒
+const WEAK_ID_PATTERN = /^\d{1,10}$/;
+const ID_CARD_PATTERN = /^\d{17}[\dXx]$/;
+const RANDOM_ID_ALPHABET = "ABCDEFGHJKLMNPQRSTUVWXYZ23456789";
 const state = {
   exam: null,
   project: null,
@@ -120,14 +127,6 @@ function normalizeSubjectKey(value) {
   const key = normalizeText(value);
   const subject = SUBJECTS.find((item) => normalizeKey(item.key) === normalizeKey(key) || normalizeKey(item.name) === normalizeKey(key));
   return subject?.key || key;
-}
-
-function canonicalStudentId(value) {
-  return normalizeText(value).normalize("NFKC").replace(/\s+/g, "").toUpperCase();
-}
-
-function canonicalStudentName(value) {
-  return normalizeText(value).normalize("NFKC").replace(/\s+/g, " ").trim();
 }
 
 function displayNumber(value, digits = 1) {
@@ -754,6 +753,8 @@ function setEditingDisabled(disabled) {
   $("chooseExamButton").disabled = disabled;
   $("clearExamButton").disabled = disabled;
   $("clearProjectButton").disabled = disabled;
+  $("generateIdsButton").disabled = disabled || !state.exam;
+  $("cleanupLegacyToggle").disabled = disabled;
 }
 
 function renderMessages(result) {
@@ -821,6 +822,7 @@ function renderReview() {
     $("reviewState").className = "panel-state muted";
     $("generateButton").disabled = true;
     $("backupButton").disabled = true;
+    $("generateIdsButton").disabled = true;
     renderMergePreview(null);
     return;
   }
@@ -847,6 +849,7 @@ function renderReview() {
   $("exportState").className = `panel-state ${valid ? "" : "muted"}`;
   $("generateButton").disabled = !valid;
   $("backupButton").disabled = !valid;
+  $("generateIdsButton").disabled = !valid;
   let publishStudentCount = result.validStudents;
   if (valid && state.project) publishStudentCount = mergeExamIntoProject(state.project, state.exam).students.length;
   $("exportEstimate").textContent = valid ? `将为合并后的 ${publishStudentCount} 位学生生成独立加密记录` : "导入并通过校验后可生成";
@@ -1041,6 +1044,18 @@ async function uploadRelease() {
   $("uploadStatus").textContent = "正在读取仓库版本…";
   $("pagesResult").hidden = true;
   try {
+    // 一键迁移：勾选后随本次发布提交删除 data/ 下的旧版哈希命名文件（v1 明文寻址）。
+    const cleanupEntries = $("cleanupLegacyToggle").checked
+      ? await (async () => {
+          $("uploadStatus").textContent = "正在检查旧版数据文件…";
+          try {
+            const listing = await githubRequest(`${apiRoot}/contents/data?ref=${encodeURIComponent(branch)}`, token);
+            return buildLegacyCleanupEntries(listing);
+          } catch {
+            return [];
+          }
+        })()
+      : [];
     const ref = await githubRequest(`${apiRoot}/git/ref/heads/${encodeURIComponent(branch)}`, token);
     const headSha = ref.object.sha;
     const headCommit = await githubRequest(`${apiRoot}/git/commits/${headSha}`, token);
@@ -1050,9 +1065,11 @@ async function uploadRelease() {
       const blob = await githubRequest(`${apiRoot}/git/blobs`, token, { method: "POST", body: JSON.stringify({ content: textToBase64(file.content), encoding: "base64" }) });
       treeEntries.push({ path: file.path, mode: "100644", type: "blob", sha: blob.sha });
     }
+    treeEntries.push(...cleanupEntries);
+    if (cleanupEntries.length) $("uploadStatus").textContent = `已并入 ${cleanupEntries.length} 个旧版文件的删除…`;
     $("uploadStatus").textContent = "正在创建发布提交…";
     const tree = await githubRequest(`${apiRoot}/git/trees`, token, { method: "POST", body: JSON.stringify({ base_tree: headCommit.tree.sha, tree: treeEntries }) });
-    const commit = await githubRequest(`${apiRoot}/git/commits`, token, { method: "POST", body: JSON.stringify({ message: `data: publish ${generated.version.latestExam || "grade report"}`, tree: tree.sha, parents: [headSha] }) });
+    const commit = await githubRequest(`${apiRoot}/git/commits`, token, { method: "POST", body: JSON.stringify({ message: `data: publish ${generated.version.latestExam || "grade report"}${cleanupEntries.length ? `；清理旧版数据文件 ${cleanupEntries.length} 个` : ""}`, tree: tree.sha, parents: [headSha] }) });
     await githubRequest(`${apiRoot}/git/refs/heads/${encodeURIComponent(branch)}`, token, { method: "PATCH", body: JSON.stringify({ sha: commit.sha, force: false }) });
     $("uploadStatus").textContent = "正在回读 GitHub 版本…";
     let verificationText = "提交已完成";
@@ -1088,8 +1105,8 @@ async function uploadRelease() {
     const pagesReady = await waitForPagesRelease(pagesUrl, generated.version.releaseId);
     if (pagesReady) {
       $("pagesResultTitle").textContent = "发布完成，可以查询";
-      $("pagesResultText").textContent = `${verificationText}（${commit.sha.slice(0, 7)}），Pages 已读取本次发布版本。`;
-      $("uploadStatus").textContent = state.backupSaved ? "发布完成" : "发布完成 · 请再下载项目备份";
+      $("pagesResultText").textContent = `${verificationText}（${commit.sha.slice(0, 7)}），Pages 已读取本次发布版本。${cleanupEntries.length ? `已随本次提交清理 ${cleanupEntries.length} 个旧版数据文件。` : ""}`;
+      $("uploadStatus").textContent = (state.backupSaved ? "发布完成" : "发布完成 · 请再下载项目备份") + (cleanupEntries.length ? ` · 已清理 ${cleanupEntries.length} 个旧版文件` : "");
       showToast("发布完成，成绩查询页已经生效");
     } else {
       $("pagesResultTitle").textContent = "提交成功，Pages 仍在刷新";
@@ -1142,38 +1159,54 @@ function bytesToBase64(bytes) {
   return btoa(binary);
 }
 
-function bytesToHex(bytes) {
-  return Array.from(bytes, (byte) => byte.toString(16).padStart(2, "0")).join("");
+// v3 加密原语（deriveV3Keyring / encryptV3Record）由 shared-crypto.js 提供，
+// 与查询页共享同一份实现；本文件只负责调用与打包。
+
+// 从 data/ 目录列表中筛出旧版哈希命名文件（v1 明文寻址），生成用于 Git Trees API 的删除条目。
+function buildLegacyCleanupEntries(listing) {
+  if (!Array.isArray(listing)) return [];
+  return listing
+    .filter((item) => item && item.type === "file" && /^[0-9a-f]{64}\.json$/i.test(item.name))
+    .map((item) => ({ path: `data/${item.name}`, mode: "100644", type: "blob", sha: null }));
 }
 
-async function sha256Hex(value) {
-  const digest = await crypto.subtle.digest("SHA-256", new TextEncoder().encode(value));
-  return bytesToHex(new Uint8Array(digest));
+function isWeakStudentId(value) {
+  const id = canonicalStudentId(value);
+  return !id || WEAK_ID_PATTERN.test(id) || ID_CARD_PATTERN.test(id);
 }
 
-// v3：记录地址(fileId)与加密密钥同源于同一次 PBKDF2(240000) 派生。
-// 地址不再是裸 SHA-256(姓名|识别码)，猜测一组凭据必须先付满 240000 次迭代
-// 才能验证其是否存在，离线枚举成本从"每秒数十亿次"降到与解密同级。
-// 盐由凭据确定性派生（无需服务端存储），仅用于阻断彩虹表。
-async function deriveV3Keyring(secret) {
-  const salt = new Uint8Array(await crypto.subtle.digest("SHA-256", new TextEncoder().encode(`grade-query-v3-salt|${secret}`)));
-  const material = await crypto.subtle.importKey("raw", new TextEncoder().encode(secret), "PBKDF2", false, ["deriveBits"]);
-  const bits = new Uint8Array(await crypto.subtle.deriveBits(
-    { name: "PBKDF2", salt, iterations: 240000, hash: "SHA-256" },
-    material,
-    512,
-  ));
-  const encKey = await crypto.subtle.importKey("raw", bits.slice(32, 64), "AES-GCM", false, ["encrypt"]);
-  return { fileId: bytesToHex(bits.slice(0, 32)), encKey, saltB64: bytesToBase64(salt) };
+function randomStudentId(existing) {
+  for (let attempt = 0; attempt < 50; attempt += 1) {
+    const bytes = crypto.getRandomValues(new Uint8Array(8));
+    const code = Array.from(bytes, (byte) => RANDOM_ID_ALPHABET[byte % RANDOM_ID_ALPHABET.length]).join("");
+    if (!existing.has(code)) {
+      existing.add(code);
+      return code;
+    }
+  }
+  throw new Error("无法生成不重复的随机识别码，请重试。");
 }
 
-async function encryptStudent(student) {
-  const secret = `${canonicalStudentName(student.name)}|${canonicalStudentId(student.studentId)}`;
-  const keyring = await deriveV3Keyring(secret);
-  const iv = crypto.getRandomValues(new Uint8Array(12));
-  const payload = new TextEncoder().encode(JSON.stringify(student));
-  const data = await crypto.subtle.encrypt({ name: "AES-GCM", iv }, keyring.encKey, payload);
-  return [keyring.fileId, { v: 3, salt: keyring.saltB64, iv: bytesToBase64(iv), data: bytesToBase64(new Uint8Array(data)) }];
+// 为空/弱识别码的学生批量生成 8 位随机码（去掉易混淆的 0/O/1/I），已有合规识别码保持不变。
+function generateMissingIds() {
+  if (!state.exam) {
+    showToast("请先导入考试数据。");
+    return 0;
+  }
+  const existing = new Set(state.exam.students.map((student) => student.studentId).filter(Boolean));
+  let generated = 0;
+  for (const student of state.exam.students) {
+    if (!isWeakStudentId(student.studentId)) continue;
+    student.studentId = randomStudentId(existing);
+    generated += 1;
+  }
+  if (generated) {
+    renderReview();
+    showToast(`已为 ${generated} 位学生生成随机识别码，请重新核对并下载项目备份。`);
+  } else {
+    showToast("没有需要替换的空/弱识别码。");
+  }
+  return generated;
 }
 
 async function buildEncryptedBundle(project) {
@@ -1181,7 +1214,7 @@ async function buildEncryptedBundle(project) {
   const records = {};
   for (let index = 0; index < project.students.length; index += 1) {
     const student = project.students[index];
-    const [fileId, encrypted] = await encryptStudent(student);
+    const [fileId, encrypted] = await encryptV3Record(student);
     records[fileId] = encrypted;
     $("sideStatusCopy").textContent = `正在加密第 ${index + 1} / ${project.students.length} 位学生…`;
     $("progressBar").style.width = `${68 + ((index + 1) / project.students.length) * 25}%`;
@@ -1318,6 +1351,7 @@ $("clearExamButton").addEventListener("click", clearExam);
 $("clearProjectButton").addEventListener("click", clearProject);
 $("generateButton").addEventListener("click", generateRelease);
 $("backupButton").addEventListener("click", saveBackup);
+$("generateIdsButton").addEventListener("click", () => generateMissingIds());
 $("uploadButton").addEventListener("click", uploadRelease);
 $("toggleTokenButton").addEventListener("click", () => {
   const input = $("githubToken");

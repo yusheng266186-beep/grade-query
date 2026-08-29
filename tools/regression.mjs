@@ -73,10 +73,14 @@ function baseSandbox(document, fetchImpl = async () => ({ ok: false, text: async
 const publisherDom = makeDom();
 const publisherSandbox = baseSandbox(publisherDom.document);
 vm.createContext(publisherSandbox);
+const sharedSource = fs.readFileSync(new URL("../shared-crypto.js", import.meta.url), "utf8");
 const publisherSource = fs.readFileSync(new URL("../publisher.js", import.meta.url), "utf8");
+vm.runInContext(sharedSource, publisherSandbox);
 vm.runInContext(`${publisherSource}\n;globalThis.__publisher = {
   normalizeExam, validateExam, projectFromExam, mergeExamIntoProject, getMergePreview,
-  renderReview, currentProject, buildEncryptedBundle, sha256Hex, uploadRelease, deriveV3Keyring,
+  renderReview, currentProject, buildEncryptedBundle, sha256Hex, uploadRelease,
+  deriveV3Keyring: globalThis.GradeQueryCrypto.deriveV3Keyring,
+  generateMissingIds, isWeakStudentId, buildLegacyCleanupEntries,
   get state() { return state; }
 };`, publisherSandbox);
 const publisher = publisherSandbox.__publisher;
@@ -206,6 +210,7 @@ function makeQueryHarness(version, bundle = release.bundle) {
   };
   const sandbox = baseSandbox(queryDom.document, fetchImpl);
   vm.createContext(sandbox);
+  vm.runInContext(sharedSource, sandbox);
   vm.runInContext(`${querySource}\n;globalThis.__query = {
     loadVersionInfo, loadDataBundle, loadStudent, createInsights, rankTimeline,
     get activeDataMeta() { return activeDataMeta; }
@@ -276,4 +281,44 @@ await compatHarness.query.loadVersionInfo();
 const compatStudent = await compatHarness.query.loadStudent("学生甲（更正）", "s24001");
 assert.equal(compatStudent?.currentExamId, "2026-mid", "查询端应继续兼容历史 v2 加密记录");
 
-console.log("Regression checks passed: strict validation, template guard, true replacement merge, chronology, v3 slow-hash encryption, fast-hash oracle removed, NFKC normalization, v2 backward compatibility, GitHub upload, cache busting, dynamic metadata, decryption, integrity retry.");
+// ---- 共享加密模块单源校验：两端必须得到完全一致的地址与密钥 ----
+const publisherKeyring = await publisher.deriveV3Keyring(studentASecret);
+assert.equal(publisherKeyring.fileId, studentAKeyring.fileId, "发布端与回归内联派生应得到同一 v3 地址");
+
+// ---- 一键迁移清理：只筛旧版哈希命名文件，删除条目用 sha:null ----
+const cleanupListing = [
+  { name: `${"a".repeat(64)}.json`, type: "file" },
+  { name: "grade-data.v2.json", type: "file" },
+  { name: "version.json", type: "file" },
+  { name: `${"b".repeat(32)}.json`, type: "file" },
+  { name: `${"c".repeat(64)}.json`, type: "dir" },
+];
+const cleanupEntries = publisher.buildLegacyCleanupEntries(cleanupListing);
+assert.equal(cleanupEntries.length, 1, "只应命中 64 位十六进制命名的文件条目");
+assert.equal(cleanupEntries[0].path, `data/${"a".repeat(64)}.json`);
+assert.equal(cleanupEntries[0].mode, "100644");
+assert.equal(cleanupEntries[0].type, "blob");
+assert.equal(cleanupEntries[0].sha, null, "删除条目必须以 sha:null 表达");
+assert.equal(publisher.buildLegacyCleanupEntries(null).length, 0);
+
+// ---- 弱识别码批量生成：弱码被替换、合规码保持、结果唯一且无易混淆字符 ----
+const weakInput = structuredClone(cleanInput);
+weakInput.students[0].studentId = "24001";
+weakInput.students[1].studentId = "511111200801011234";
+publisher.state.exam = publisher.normalizeExam(weakInput);
+const generatedCount = publisher.generateMissingIds();
+assert.equal(generatedCount, 2, "两条弱识别码都应被替换");
+const generatedIds = publisher.state.exam.students.map((student) => student.studentId);
+assert.ok(generatedIds.every((id) => /^[A-HJ-NP-Z2-9]{8}$/.test(id)), `生成码应为8位去混淆字母数字：${generatedIds.join(",")}`);
+assert.notEqual(generatedIds[0], generatedIds[1], "生成码不得重复");
+
+const mixedInput = structuredClone(cleanInput);
+mixedInput.students[0].studentId = "S24001";
+mixedInput.students[1].studentId = "24002";
+publisher.state.exam = publisher.normalizeExam(mixedInput);
+publisher.generateMissingIds();
+assert.equal(publisher.state.exam.students[0].studentId, "S24001", "合规识别码必须保持不变");
+assert.match(publisher.state.exam.students[1].studentId, /^[A-HJ-NP-Z2-9]{8}$/);
+assert.ok(publisher.isWeakStudentId("12345") && publisher.isWeakStudentId("511111200801011234") && publisher.isWeakStudentId("") && !publisher.isWeakStudentId("S24001"));
+
+console.log("Regression checks passed: strict validation, template guard, true replacement merge, chronology, shared-crypto v3 slow-hash encryption, fast-hash oracle removed, NFKC normalization, v2 backward compatibility, legacy cleanup entries, weak-ID regeneration, GitHub upload, cache busting, dynamic metadata, decryption, integrity retry.");
