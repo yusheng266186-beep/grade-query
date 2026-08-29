@@ -488,7 +488,7 @@
     "use strict";
     const STUDENTS = [];
     const CLASS_SUMMARY = {"className":"高二4班","students":48,"average":366.885416666667,"controlCount":1,"bachelorCount":23,"bachelorChange":11};
-    const BUILD_META = {"studentCount":48,"examCount":6,"className":"高二4班","latestExam":"高二下零诊","latestExamId":"legacy-zero","dataVersion":"legacy-20260716","sourceFiles":["身份信息.xlsx","班级划线.xlsx","班级上线人数对比.xlsx","物理类4班全部科目小题得分_含知识点.xlsx","年级成绩.xlsx","多次考试分析.xlsx"],"generatedAt":"2026-07-16T12:45:11.778Z"};
+    const BUILD_META = {"studentCount":48,"examCount":6,"className":"高二4班","latestExam":"高二下零诊","latestExamId":"legacy-zero","dataVersion":"legacy-20260716","generatedAt":"2026-07-16T12:45:11.778Z"};
 
     const SUBJECTS = [
       { key: "chinese", name: "语文", max: 150 },
@@ -697,11 +697,54 @@
       return JSON.parse(new TextDecoder().decode(plaintext));
     }
 
+    function canonicalStudentName(value) {
+      return String(value ?? "").normalize("NFKC").replace(/\s+/g, " ").trim();
+    }
+
+    function canonicalQueryId(value) {
+      return String(value ?? "").normalize("NFKC").replace(/\s+/g, "").trim().toUpperCase();
+    }
+
+    async function buildStudentSecret(name, id) {
+      return `${canonicalStudentName(name)}|${canonicalQueryId(id)}`;
+    }
+
+    // v3：记录地址与加密密钥同源于一次 PBKDF2(240000)。
+    // 猜测一次"姓名|识别码"必须先付满 240000 次迭代才能得到地址，
+    // 使离线枚举的验证成本与解密成本相同（v2 的裸 SHA-256 地址无此保护）。
+    async function deriveV3Keyring(secret) {
+      const salt = new Uint8Array(await crypto.subtle.digest("SHA-256", textEncoder.encode(`grade-query-v3-salt|${secret}`)));
+      const material = await crypto.subtle.importKey("raw", textEncoder.encode(secret), "PBKDF2", false, ["deriveBits"]);
+      const bits = new Uint8Array(await crypto.subtle.deriveBits(
+        { name: "PBKDF2", salt, iterations: 240000, hash: "SHA-256" },
+        material,
+        512,
+      ));
+      const encKey = await crypto.subtle.importKey("raw", bits.slice(32, 64), "AES-GCM", false, ["decrypt"]);
+      return { fileId: bytesToHex(bits.slice(0, 32)), encKey };
+    }
+
+    async function decryptV3Record(keyring, encrypted) {
+      const plaintext = await crypto.subtle.decrypt(
+        { name: "AES-GCM", iv: base64ToBytes(encrypted.iv) },
+        keyring.encKey,
+        base64ToBytes(encrypted.data),
+      );
+      return JSON.parse(new TextDecoder().decode(plaintext));
+    }
+
     async function loadStudent(name, id) {
-      const secret = `${name.trim()}|${id.replace(/\s+/g, "").trim().toUpperCase()}`;
-      const v2Id = await sha256Hex(`grade-query-v2|${secret}`);
+      const secret = await buildStudentSecret(name, id);
       const bundle = await loadDataBundle();
-      if (bundle) return bundle.records?.[v2Id] ? decryptRecord(secret, bundle.records[v2Id]) : null;
+      const v3Keyring = await deriveV3Keyring(secret);
+      if (bundle) {
+        const records = bundle.records || {};
+        const v3Record = records[v3Keyring.fileId];
+        if (v3Record && v3Record.v === 3) return decryptV3Record(v3Keyring, v3Record);
+        const v2Id = await sha256Hex(`grade-query-v2|${secret}`);
+        if (records[v2Id]) return decryptRecord(secret, records[v2Id]);
+        return null;
+      }
       const legacyId = await sha256Hex(`grade-query-v1|${secret}`);
       const encrypted = await fetchJsonWithTimeout(`data/${legacyId}.json`);
       if (!encrypted) return null;
@@ -710,8 +753,8 @@
 
     async function handleQuery(event) {
       if (event) event.preventDefault();
-      const name = nameInput.value.trim();
-      const id = idInput.value.replace(/\s+/g, "").trim().toUpperCase();
+      const name = canonicalStudentName(nameInput.value);
+      const id = canonicalQueryId(idInput.value);
       errorText.textContent = "";
       nameInput.removeAttribute("aria-invalid");
       idInput.removeAttribute("aria-invalid");
@@ -774,9 +817,18 @@
         errorText.textContent = "";
       });
       input.addEventListener("keydown", (event) => {
+        if (event.isComposing || event.keyCode === 229) {
+          if (event.key === "Enter") event.preventDefault();
+          return;
+        }
         if (event.key === "Enter" && input === nameInput && idInput.value.trim() === "") {
           event.preventDefault();
           idInput.focus();
+        }
+        if (event.key === "Enter" && input === idInput) {
+          event.preventDefault();
+          if (typeof queryForm.requestSubmit === "function") queryForm.requestSubmit();
+          else queryButton.click();
         }
       });
       syncClearButton(input);

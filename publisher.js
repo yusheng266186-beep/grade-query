@@ -123,7 +123,11 @@ function normalizeSubjectKey(value) {
 }
 
 function canonicalStudentId(value) {
-  return normalizeText(value).replace(/\s+/g, "").toUpperCase();
+  return normalizeText(value).normalize("NFKC").replace(/\s+/g, "").toUpperCase();
+}
+
+function canonicalStudentName(value) {
+  return normalizeText(value).normalize("NFKC").replace(/\s+/g, " ").trim();
 }
 
 function displayNumber(value, digits = 1) {
@@ -626,7 +630,7 @@ function validateExam(exam) {
     if (cutoff.controlLine != null && cutoff.bachelorLine != null && cutoff.controlLine < cutoff.bachelorLine) errors.push(`${subject.name}特控线不能低于本科线。`);
   }
   const sampleStudents = exam.students.filter((student, index) => {
-    const sample = /^TEST\d+$/i.test(student.studentId) || /示例学生|测试学生/.test(student.name);
+    const sample = /^TEST/i.test(student.studentId) || /示例学生|测试学生/.test(student.name);
     if (sample) studentErrorIndexes.add(index);
     return sample;
   });
@@ -642,7 +646,11 @@ function validateExam(exam) {
     if ((exam.dataIssues || []).some((issue) => issue.startsWith(label))) studentErrorIndexes.add(index);
     if (!student.studentId) addError("缺少学号/查询识别码。");
     else if (ids.has(student.studentId)) addError(`查询识别码重复：${student.studentId}。`);
-    else ids.add(student.studentId);
+    else {
+      ids.add(student.studentId);
+      if (/^\d{17}[\dXx]$/.test(student.studentId)) warnings.push(`${label}查询识别码疑似身份证号：公开数据可被离线穷举，强烈建议改用学校内部随机识别码（8 位以上字母数字）。`);
+      else if (/^\d{1,10}$/.test(student.studentId)) warnings.push(`${label}查询识别码为不超过 10 位的纯数字，强度较低，建议使用 8 位以上随机字母数字组合。`);
+    }
     if (!student.name) addError("缺少学生姓名。");
     else if (names.has(student.name)) warnings.push(`姓名“${student.name}”出现多次，请确认查询识别码不同且准确。`);
     else names.add(student.name);
@@ -1143,16 +1151,29 @@ async function sha256Hex(value) {
   return bytesToHex(new Uint8Array(digest));
 }
 
+// v3：记录地址(fileId)与加密密钥同源于同一次 PBKDF2(240000) 派生。
+// 地址不再是裸 SHA-256(姓名|识别码)，猜测一组凭据必须先付满 240000 次迭代
+// 才能验证其是否存在，离线枚举成本从"每秒数十亿次"降到与解密同级。
+// 盐由凭据确定性派生（无需服务端存储），仅用于阻断彩虹表。
+async function deriveV3Keyring(secret) {
+  const salt = new Uint8Array(await crypto.subtle.digest("SHA-256", new TextEncoder().encode(`grade-query-v3-salt|${secret}`)));
+  const material = await crypto.subtle.importKey("raw", new TextEncoder().encode(secret), "PBKDF2", false, ["deriveBits"]);
+  const bits = new Uint8Array(await crypto.subtle.deriveBits(
+    { name: "PBKDF2", salt, iterations: 240000, hash: "SHA-256" },
+    material,
+    512,
+  ));
+  const encKey = await crypto.subtle.importKey("raw", bits.slice(32, 64), "AES-GCM", false, ["encrypt"]);
+  return { fileId: bytesToHex(bits.slice(0, 32)), encKey, saltB64: bytesToBase64(salt) };
+}
+
 async function encryptStudent(student) {
-  const secret = `${student.name.trim()}|${canonicalStudentId(student.studentId)}`;
-  const fileId = await sha256Hex(`grade-query-v2|${secret}`);
-  const salt = crypto.getRandomValues(new Uint8Array(16));
+  const secret = `${canonicalStudentName(student.name)}|${canonicalStudentId(student.studentId)}`;
+  const keyring = await deriveV3Keyring(secret);
   const iv = crypto.getRandomValues(new Uint8Array(12));
-  const material = await crypto.subtle.importKey("raw", new TextEncoder().encode(secret), "PBKDF2", false, ["deriveKey"]);
-  const key = await crypto.subtle.deriveKey({ name: "PBKDF2", salt, iterations: 240000, hash: "SHA-256" }, material, { name: "AES-GCM", length: 256 }, false, ["encrypt"]);
   const payload = new TextEncoder().encode(JSON.stringify(student));
-  const data = await crypto.subtle.encrypt({ name: "AES-GCM", iv }, key, payload);
-  return [fileId, { v: 2, salt: bytesToBase64(salt), iv: bytesToBase64(iv), data: bytesToBase64(new Uint8Array(data)) }];
+  const data = await crypto.subtle.encrypt({ name: "AES-GCM", iv }, keyring.encKey, payload);
+  return [keyring.fileId, { v: 3, salt: keyring.saltB64, iv: bytesToBase64(iv), data: bytesToBase64(new Uint8Array(data)) }];
 }
 
 async function buildEncryptedBundle(project) {
@@ -1195,7 +1216,7 @@ async function buildEncryptedBundle(project) {
     recordCount: bundle.recordCount,
     releaseId,
     bundleSha256,
-    generatedBy: "grade-query-publisher-v2",
+    generatedBy: "grade-query-publisher-v3",
     replaceFiles: ["data/grade-data.v2.json", "data/version.json"],
   };
   return { bundle, version };

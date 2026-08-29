@@ -76,7 +76,7 @@ vm.createContext(publisherSandbox);
 const publisherSource = fs.readFileSync(new URL("../publisher.js", import.meta.url), "utf8");
 vm.runInContext(`${publisherSource}\n;globalThis.__publisher = {
   normalizeExam, validateExam, projectFromExam, mergeExamIntoProject, getMergePreview,
-  renderReview, currentProject, buildEncryptedBundle, sha256Hex, uploadRelease,
+  renderReview, currentProject, buildEncryptedBundle, sha256Hex, uploadRelease, deriveV3Keyring,
   get state() { return state; }
 };`, publisherSandbox);
 const publisher = publisherSandbox.__publisher;
@@ -196,12 +196,12 @@ const html = fs.readFileSync(new URL("../index.html", import.meta.url), "utf8");
 const querySource = html.match(/<script>([\s\S]*?)<\/script>/)?.[1];
 assert.ok(querySource, "index.html 内联脚本应存在");
 
-function makeQueryHarness(version) {
+function makeQueryHarness(version, bundle = release.bundle) {
   const queryDom = makeDom();
   const fetchImpl = async (url) => {
     const path = String(url);
     if (path.includes("version.json")) return { ok: true, json: async () => version, text: async () => JSON.stringify(version) };
-    if (path.includes("grade-data.v2.json")) return { ok: true, json: async () => release.bundle, text: async () => JSON.stringify(release.bundle) };
+    if (path.includes("grade-data.v2.json")) return { ok: true, json: async () => bundle, text: async () => JSON.stringify(bundle) };
     return { ok: false, json: async () => null, text: async () => "" };
   };
   const sandbox = baseSandbox(queryDom.document, fetchImpl);
@@ -235,4 +235,45 @@ await assert.rejects(() => badHarness.query.loadDataBundle(), (error) => error?.
 badVersion.bundleSha256 = release.version.bundleSha256;
 assert.equal((await badHarness.query.loadDataBundle()).recordCount, 2, "版本同步后应允许重试");
 
-console.log("Regression checks passed: strict validation, template guard, true replacement merge, chronology, encryption, GitHub upload, cache busting, dynamic metadata, decryption, integrity retry.");
+// ---- v3 加密体系：慢哈希寻址 / 全角归一化 / v2 兼容 ----
+const v3Records = Object.values(release.bundle.records);
+assert.ok(v3Records.every((record) => record.v === 3), "发布包应全部使用 v3 加密记录");
+assert.ok(v3Records.every((record) => typeof record.salt === "string" && record.iv && record.data), "v3 记录应携带盐/IV/密文");
+
+const studentASecret = "学生甲(更正)|S24001";
+const fastAddress = await publisher.sha256Hex(`grade-query-v2|${studentASecret}`);
+assert.ok(!(fastAddress in release.bundle.records), "v3 记录地址不得等于裸 SHA-256 快速哈希（防离线枚举）");
+const studentAKeyring = await publisher.deriveV3Keyring(studentASecret);
+assert.ok(studentAKeyring.fileId in release.bundle.records, "v3 慢哈希地址应能命中发布包记录");
+
+const wrongHarness = makeQueryHarness(structuredClone(release.version));
+await wrongHarness.query.loadVersionInfo();
+assert.equal(await wrongHarness.query.loadStudent("学生甲（更正）", "S99999"), null, "错误识别码应安静失败");
+
+const nfkcHarness = makeQueryHarness(structuredClone(release.version));
+await nfkcHarness.query.loadVersionInfo();
+const nfkcStudent = await nfkcHarness.query.loadStudent("学生甲（更正）", "ｓ２４００１");
+assert.equal(nfkcStudent?.currentExamId, "2026-mid", "全角识别码应归一化后命中同一记录");
+
+async function encryptStudentV2(secret, student) {
+  const fileId = await publisher.sha256Hex(`grade-query-v2|${secret}`);
+  const salt = webcrypto.getRandomValues(new Uint8Array(16));
+  const iv = webcrypto.getRandomValues(new Uint8Array(12));
+  const material = await webcrypto.subtle.importKey("raw", new TextEncoder().encode(secret), "PBKDF2", false, ["deriveKey"]);
+  const key = await webcrypto.subtle.deriveKey({ name: "PBKDF2", salt, iterations: 240000, hash: "SHA-256" }, material, { name: "AES-GCM", length: 256 }, false, ["encrypt"]);
+  const data = await webcrypto.subtle.encrypt({ name: "AES-GCM", iv }, key, new TextEncoder().encode(JSON.stringify(student)));
+  const toB64 = (bytes) => Buffer.from(bytes).toString("base64");
+  return [fileId, { v: 2, salt: toB64(salt), iv: toB64(iv), data: toB64(new Uint8Array(data)) }];
+}
+
+const compatBundle = structuredClone(release.bundle);
+delete compatBundle.records[studentAKeyring.fileId];
+const [v2FileId, v2Record] = await encryptStudentV2(studentASecret, decrypted);
+compatBundle.records[v2FileId] = v2Record;
+const compatVersion = { ...release.version, bundleSha256: await publisher.sha256Hex(JSON.stringify(compatBundle)) };
+const compatHarness = makeQueryHarness(compatVersion, compatBundle);
+await compatHarness.query.loadVersionInfo();
+const compatStudent = await compatHarness.query.loadStudent("学生甲（更正）", "s24001");
+assert.equal(compatStudent?.currentExamId, "2026-mid", "查询端应继续兼容历史 v2 加密记录");
+
+console.log("Regression checks passed: strict validation, template guard, true replacement merge, chronology, v3 slow-hash encryption, fast-hash oracle removed, NFKC normalization, v2 backward compatibility, GitHub upload, cache busting, dynamic metadata, decryption, integrity retry.");
