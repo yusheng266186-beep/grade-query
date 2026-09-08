@@ -929,7 +929,7 @@
 
     function renderReport(student) {
       const current = student.current;
-      const currentExamName = student.currentExam?.examName || activeDataMeta.latestExam || "本次考试";
+      const currentExamName = student.currentExam?.examName || student.exams?.[student.exams.length - 1]?.name || activeDataMeta.latestExam || "本次考试";
       const examCount = (student.exams || []).length;
       const overall = statusFor(current.controlDiff, current.bachelorDiff);
       const insights = createInsights(student);
