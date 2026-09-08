@@ -1,0 +1,19 @@
+{
+  "kind": "grade-query-version",
+  "schemaVersion": 2,
+  "dataVersion": "v3-roster-1788832742750",
+  "generatedAt": "2026-09-08T01:59:02.750Z",
+  "className": "高三4班",
+  "studentCount": 48,
+  "examCount": 7,
+  "latestExam": "高三第一次月考",
+  "latestExamId": "2026-grade3-monthly-51",
+  "recordCount": 48,
+  "releaseId": "v3-roster-1788832742750-a726e7d5e791",
+  "bundleSha256": "a726e7d5e7912affb2ff113462b7460edf97a65bfc93944ed3358a9e3904712b",
+  "generatedBy": "grade-query-roster-filter",
+  "replaceFiles": [
+    "data/grade-data.v2.json",
+    "data/version.json"
+  ]
+}
