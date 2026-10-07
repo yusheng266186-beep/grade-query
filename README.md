@@ -6,6 +6,25 @@
 > 发布工作台：[打开成绩发布工作台](https://yusheng266186-beep.github.io/grade-query/publisher.html)
 > GitHub：[查看源代码](https://github.com/yusheng266186-beep/grade-query)
 
+<!-- project-navigation:start -->
+## 项目概览
+
+| 项目 | 说明 |
+| --- | --- |
+| 分类 | 教学分析与备考 |
+| 平台 | 浏览器 / 静态网页 |
+| 当前定位 | 成绩查询与发布工具 |
+
+老师导入考试模板并发布个人报告，学生使用识别信息查询成绩与历次趋势。
+
+[在线体验](https://yusheng266186-beep.github.io/grade-query/) · [使用与开发](#使用方式) · [项目总导航](https://github.com/yusheng266186-beep/yusheng266186-beep)
+
+个人成绩查询与批量质量分析是不同入口：[质量慧析](https://github.com/yusheng266186-beep/zhiliang-huixi-new-) 面向年级、班级和知识点分析，本库面向报告发布与学生查询。
+
+**阅读导航：** [使用方式](#使用方式) · [数据与隐私](#数据与隐私) · [目录说明](#目录说明)
+
+<!-- project-navigation:end -->
+
 ## 项目定位
 
 这是一个轻量、无后台依赖的静态成绩报告网页，配套一个浏览器端发布工作台。每次考试只需填写模板，导入工作台后即可校验、合并历次考试、逐条前端加密，并下载或一键提交 GitHub。
