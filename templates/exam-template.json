@@ -63,6 +63,9 @@
       }
     }
   ],
+  "questions": [
+    { "studentId": "TEST0001", "subjectKey": "math", "knowledge": "集合的交集", "question": "1", "maxScore": 5, "score": 0 }
+  ],
   "knowledge": [
     { "studentId": "TEST0001", "subjectKey": "math", "knowledge": "函数单调性", "question": "第12题", "loss": 6 }
   ]

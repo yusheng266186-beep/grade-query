@@ -35,14 +35,15 @@ info.getRange("A3:F3").format = { fill: gold, font: { color: ink, size: 10 }, wr
 info.getRange("A3:F3").format.rowHeight = 34;
 info.getRange("A5:C5").values = [["工作表", "用途", "是否必填"]];
 header(info, "A5:C5");
-info.getRange("A6:C10").values = [
+info.getRange("A6:C11").values = [
   ["考试信息", "填写考试名称、编号、日期、排名范围、班级和总分线", "是"],
   ["科目分数线", "填写科目满分及可选的科目线差", "建议"],
   ["学生成绩", "每行一名学生，姓名和学号/查询识别码必填", "是"],
   ["知识点失分", "可选，每行一条主要失分知识点", "否"],
+  ["小题得分", "可选，每行一名学生的一道题，记录满分、得分和知识点", "否"],
   ["发布流程", "导入项目备份（第二次起） → 导入本次模板 → 校验 → 生成加密发布包 → 上传", "—"],
 ];
-body(info, "A6:C10");
+body(info, "A6:C11");
 info.getRange("A12:F16").merge(true);
 info.getRange("A12:A16").values = [
   ["版本规则：考试编号相同会覆盖同一场考试，考试编号不同会追加到历次趋势。"],
@@ -130,6 +131,22 @@ knowledge.getRange("B4:B104").dataValidation = { rule: { type: "list", values: [
 knowledge.getRange("E4:E104").format.numberFormat = "0.0";
 knowledge.getRange("A:A").format.columnWidth = 18; knowledge.getRange("B:B").format.columnWidth = 16; knowledge.getRange("C:C").format.columnWidth = 28; knowledge.getRange("D:D").format.columnWidth = 16; knowledge.getRange("E:E").format.columnWidth = 12;
 knowledge.freezePanes.freezeRows(3);
+
+const questions = workbook.worksheets.add("小题得分");
+questions.showGridLines = false;
+title(questions, "A1:I1", "小题得分 · 一行一名学生的一道题");
+questions.getRange("A3:I3").values = [["学号", "姓名", "班级", "考试代码", "科目键", "题号", "知识点", "满分", "得分"]];
+header(questions, "A3:I3");
+questions.getRange("A4:I5").values = [
+  ["TEST0001", "示例学生甲", "高二4班", "", "math", "1", "集合的交集", 5, 0],
+  ["TEST0001", "示例学生甲", "高二4班", "", "math", "2", "复数四则运算", 5, ""],
+];
+body(questions, "A4:I5");
+questions.getRange("A4:A104").format.numberFormat = "@";
+questions.getRange("F4:F104").format.numberFormat = "@";
+questions.getRange("A:I").format.columnWidth = 20;
+questions.getRange("G:G").format.columnWidth = 28;
+questions.freezePanes.freezeRows(3);
 
 await fs.mkdir(new URL("../templates/", import.meta.url), { recursive: true });
 const file = await SpreadsheetFile.exportXlsx(workbook);

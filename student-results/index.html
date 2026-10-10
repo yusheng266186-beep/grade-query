@@ -3,6 +3,7 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <link rel="stylesheet" href="../question-data.css?v=20261010-questions">
   <meta name="color-scheme" content="light">
   <meta name="theme-color" content="#173c4b">
   <meta name="robots" content="noindex,nofollow,noarchive">
@@ -487,6 +488,7 @@
   </main>
 
   <script src="shared-crypto.js?v=20260829-1"></script>
+  <script src="../question-data.js?v=20261010-questions"></script>
   <script>
     "use strict";
     const STUDENTS = [];
@@ -901,20 +903,7 @@
     }
 
     function knowledgeContent(student) {
-      const items = [];
-      for (const subject of SUBJECTS) {
-        const detail = (student.knowledge || {})[subject.key];
-        if (!detail?.weak?.length) continue;
-        for (const point of detail.weak.slice(0, 2)) {
-          items.push(`
-            <div class="knowledge-item">
-              <b>${subject.name}</b>
-              <span>${escapeHtml(point.knowledge)} · ${escapeHtml(point.question)}</span>
-              <small>失 ${fmt(point.loss)} 分</small>
-            </div>`);
-        }
-      }
-      return items.length ? items.join("") : `<p class="panel-subtitle">暂未匹配到小题知识点数据。</p>`;
+      return window.GradeQuestionData.render(student.knowledge, SUBJECTS);
     }
 
     function classContext(student) {
@@ -1000,7 +989,7 @@
 
         <div class="detail-grid">
           <details class="panel fade-in">
-            <summary><div><h2 class="panel-title">小题与知识点</h2><p class="panel-subtitle">展开查看本次主要失分知识点</p></div><span class="summary-sign">＋</span></summary>
+            <summary><div><h2 class="panel-title">小题与知识点</h2><p class="panel-subtitle">展开查看各科小题得分、满分和知识点</p></div><span class="summary-sign">＋</span></summary>
             <div class="detail-body"><div class="knowledge-list">${knowledgeContent(student)}</div></div>
           </details>
           <details class="panel fade-in">
@@ -1020,7 +1009,7 @@
       reportShell.querySelectorAll('.cutoff-card').forEach((el, i) => { if (number(cutoffValues[i]) == null) el.remove(); });
       reportShell.querySelectorAll('.subject-row').forEach((el, i) => { const item = current.subjects?.[SUBJECTS[i].key]; if (number(item?.score) == null) { el.remove(); return; } if (number(item?.rank) == null) el.querySelector('.subject-rank')?.remove(); if (number(item?.controlDiff) == null && number(item?.bachelorDiff) == null) { el.querySelector('.subject-foot')?.remove(); el.querySelector('.state-pill')?.remove(); } });
       const detailPanels = reportShell.querySelectorAll('.detail-grid details');
-      if (!Object.values(student.knowledge || {}).some(value => value?.weak?.length)) detailPanels[0]?.remove();
+      if (!window.GradeQuestionData.hasData(student.knowledge)) detailPanels[0]?.remove();
       if (!student.classSummary) detailPanels[1]?.remove();
       reportShell.querySelectorAll('[data-trend]').forEach(el => { if (!(student.exams || []).some(exam => number(exam.scores?.[el.dataset.trend]) != null)) el.remove(); });
       if (number(current.controlDiff) == null && number(current.bachelorDiff) == null) reportShell.querySelector('.status-badge')?.remove();

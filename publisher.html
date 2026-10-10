@@ -8,7 +8,7 @@
   <meta name="robots" content="noindex,nofollow,noarchive">
   <meta name="description" content="成绩查询发布工作台：导入考试模板，校验、归档并生成前端加密发布包。">
   <title>成绩发布工作台</title>
-  <link rel="stylesheet" href="publisher.css?v=20260813-2">
+  <link rel="stylesheet" href="publisher.css?v=20261010-questions">
 </head>
 <body>
   <div class="app-shell">
@@ -61,10 +61,25 @@
               <span class="file-icon">DOC</span><div><b id="examFileName">—</b><small id="examFileInfo">—</small></div><button class="icon-button" id="clearExamButton" type="button" aria-label="移除考试文件">×</button>
             </div>
             <div class="template-actions">
-              <a class="text-action" href="templates/exam-template.xlsx?v=20260813-2" download>↓ 下载 Excel 模板</a>
-              <a class="text-action" href="templates/exam-template.json?v=20260813-2" download>↓ 下载 JSON 模板</a>
+              <a class="text-action" href="templates/exam-template.xlsx?v=20261010-questions" download>↓ 下载 Excel 模板</a>
+              <a class="text-action" href="templates/exam-template.json?v=20261010-questions" download>↓ 下载 JSON 模板</a>
               <a class="text-action" href="templates/exam-template.csv?v=20260813-2" download>↓ 下载 CSV 模板</a>
             </div>
+          </section>
+
+          <section class="panel" id="step-questions">
+            <div class="panel-heading"><div><p class="section-kicker">可选 · 小题明细</p><h2>补充小题得分</h2></div><span class="panel-state muted" id="questionState">先导入本次考试</span></div>
+            <p class="question-import-copy">导入本次考试后，可直接选择质量复盘工作簿，读取语文、数学、英语、物理、化学、生物中的小题；也支持“小题得分”模板、CSV 或 JSON。按姓名和班级匹配到本次学生，保留0分和缺失值。</p>
+            <div class="question-import-controls">
+              <label class="button button-secondary file-button" for="questionFile">选择小题文件<input id="questionFile" type="file" accept=".xlsx,.xls,.csv,.json" hidden disabled></label>
+              <label class="question-code-label"><span>考试代码</span><select id="questionExamCode" aria-label="小题考试代码" disabled><option value="">当前考试</option></select></label>
+              <button class="button button-primary" id="applyQuestionsButton" type="button" disabled>应用小题数据</button>
+              <button class="button button-secondary" id="clearQuestionsButton" type="button" disabled>撤销补充</button>
+            </div>
+            <p id="questionStatus" class="question-import-copy" role="status" aria-live="polite">小题文件只在本机读取，生成报告时一起加密。</p>
+            <div id="questionMessages" class="message-stack" hidden></div>
+            <div id="questionPreview" class="table-scroll" hidden></div>
+            <div class="template-actions"><a class="text-action" href="templates/question-template.xlsx?v=20261010-questions" download>↓ 下载小题 Excel 模板</a><a class="text-action" href="templates/question-template.csv?v=20261010-questions" download>↓ 下载小题 CSV 模板</a></div>
           </section>
 
           <section class="panel" id="step-review">
@@ -134,7 +149,7 @@
             </div>
             <div class="github-upload" id="githubUploadPanel">
               <div class="upload-heading"><div><span class="mini-label">OPTIONAL · ONE CLICK</span><b>直接发布到 GitHub Pages</b></div><span class="upload-lock">TOKEN 仅当前页面</span></div>
-              <p>需要一个只允许修改此仓库内容的 Fine-grained Token。网页会直接把两个加密数据文件提交到 GitHub，上传完成后自动给出 Pages 地址。</p>
+              <p>需要一个只允许修改此仓库内容的 Fine-grained Token。网页会把加密成绩和版本信息一起提交到 GitHub，上传完成后自动给出 Pages 地址。</p>
               <div class="github-fields">
                 <label><span>仓库</span><input id="githubRepo" type="text" value="yusheng266186-beep/grade-query" autocomplete="off" spellcheck="false"></label>
                 <label><span>分支</span><input id="githubBranch" type="text" value="main" autocomplete="off" spellcheck="false"></label>
@@ -142,6 +157,7 @@
               </div>
               <div class="upload-actions"><button class="button button-primary" id="uploadButton" type="button" disabled>一键上传并发布</button><span class="upload-status" id="uploadStatus" role="status" aria-live="polite">生成加密发布包后可上传</span></div>
               <label class="cleanup-toggle" style="display:flex;gap:6px;align-items:center;margin-top:8px;font-size:12px;color:inherit;cursor:pointer;"><input type="checkbox" id="cleanupLegacyToggle" checked>随本次发布删除旧版数据文件（v1 明文寻址，发布 v3 后不再需要；推荐勾选）</label>
+              <label class="cleanup-toggle" style="display:flex;gap:6px;align-items:center;margin-top:8px;font-size:12px;color:inherit;cursor:pointer;"><input type="checkbox" id="syncSecondaryToggle" checked>同步独立查询页（student-results）的成绩和小题数据</label>
               <div class="pages-result" id="pagesResult" hidden><span class="success-mark">↗</span><div><b id="pagesResultTitle">Pages 正在更新</b><p id="pagesResultText">—</p><a id="pagesLink" href="#" target="_blank" rel="noreferrer">打开成绩查询页面 ↗</a><a id="commitLink" href="#" target="_blank" rel="noreferrer">查看本次提交 ↗</a></div></div>
               <details class="token-help"><summary>Token 需要什么权限？</summary><p>创建 Fine-grained Token 时，将 Repository access 限定为 <code>yusheng266186-beep/grade-query</code>，Repository permissions 只开启 <b>Contents: Read and write</b>。如果仓库启用了严格的 Pages 管理权限，再额外开启 Pages: Read；本工作台不会把 Token 保存到仓库。</p><a href="https://github.com/settings/personal-access-tokens/new" target="_blank" rel="noreferrer">打开 GitHub Token 创建页 ↗</a></details>
             </div>
@@ -170,7 +186,7 @@
             <span class="mini-label">需要帮助？</span>
             <b>先看输入格式说明</b>
             <p>模板的“填写说明”页包含字段含义、排名范围、科目线和知识点失分的填写示例。</p>
-            <a href="guide.html?v=20260813-2" target="_blank" rel="noreferrer">打开图文使用说明 ↗</a>
+            <a href="guide.html?v=20261010-questions" target="_blank" rel="noreferrer">打开图文使用说明 ↗</a>
           </section>
         </aside>
       </section>
@@ -181,8 +197,9 @@
   <div class="toast" id="toast" role="status" aria-live="polite"></div>
   <noscript><p class="noscript-note">此工作台需要 JavaScript 才能读取模板和生成加密发布包，请开启 JavaScript 后刷新页面。</p></noscript>
   <script src="shared-crypto.js?v=20260829-1"></script>
+  <script src="question-data.js?v=20261010-questions"></script>
   <script src="vendor/xlsx.full.min.js?v=20260829-1"></script>
   <script src="vendor/jszip.min.js?v=20260829-1"></script>
-  <script src="publisher.js?v=20260829-2" defer></script>
+  <script src="publisher.js?v=20261010-questions" defer></script>
 </body>
 </html>

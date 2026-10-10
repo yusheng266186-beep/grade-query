@@ -29,6 +29,9 @@ const state = {
   backupSaved: false,
   generating: false,
   uploading: false,
+  questionSource: null,
+  questionBase: null,
+  questionFileName: "",
 };
 
 const $ = (id) => document.getElementById(id);
@@ -255,16 +258,10 @@ function normalizeExam(payload) {
     if (student._autoTotal) student.totalScore = points.reduce((sum, value) => sum + value, 0);
     return student;
   });
-  const knowledge = (payload.knowledge || source.knowledge || []).map((item, index) => {
-    const label = item.__sourceLabel || `知识点记录第 ${index + 1} 条：`;
-    return {
-      _sourceLabel: label,
-      studentId: canonicalStudentId(item.studentId ?? item.id ?? item.学号),
-      subjectKey: normalizeSubjectKey(item.subjectKey ?? item.subject ?? item.科目),
-      knowledge: normalizeText(item.knowledge ?? item.知识点),
-      question: normalizeText(item.question ?? item.题号 ?? item.题目),
-      loss: checkedNumber(item.loss ?? item.失分, `${label}失分`, dataIssues),
-    };
+  const knowledge = [...(payload.knowledge || source.knowledge || []), ...(payload.questions || source.questions || [])].map((item, index) => {
+    const point = window.GradeQuestionData.normalizePoint(item, index);
+    dataIssues.push(...point._issues);
+    return point;
   });
   const rawDate = source.examDate ?? source.date ?? source.考试日期;
   const rawScope = source.scope ?? source.rankScope ?? source.排名范围;
@@ -432,7 +429,109 @@ function parseXlsx(arrayBuffer) {
   const studentRows = sheetRows(workbook, ["学生成绩", "成绩数据", "students"]);
   const knowledgeRows = sheetRows(workbook, ["知识点失分", "小题知识点", "knowledge"]);
   if (!studentRows.length) throw new Error("没有找到“学生成绩”工作表，或者表头为空。");
-  return buildExamFromRows(metadataRows, subjectRows, studentRows, knowledgeRows);
+  const exam = buildExamFromRows(metadataRows, subjectRows, studentRows, knowledgeRows);
+  const longSheet = workbook.SheetNames.some(name => ["小题得分", "小题成绩", "questions", "question-scores"].includes(normalizeKey(name)));
+  if (longSheet) {
+    const rows = window.GradeQuestionData.workbookRows(workbook, window.XLSX);
+    const code = exam.exam.note.match(/考试代码\s*([\w-]+)/)?.[1] || exam.exam.examId;
+    const matched = window.GradeQuestionData.matchRows(rows, exam.students, code);
+    exam.knowledge.push(...matched.rows);
+    exam.dataIssues.push(...matched.errors);
+  }
+  return exam;
+}
+
+function resetQuestions() {
+  state.questionSource = null;
+  state.questionBase = null;
+  state.questionFileName = "";
+  $("questionFile").value = "";
+  $("questionExamCode").innerHTML = '<option value="">当前考试</option>';
+  $("questionMessages").hidden = true;
+  $("questionPreview").hidden = true;
+  $("questionStatus").textContent = "小题文件只在本机读取，生成报告时一起加密。";
+}
+
+function renderQuestionSummary() {
+  const points = (state.exam?.knowledge || []).filter(p => p.kind === "question");
+  const count = new Set(points.map(p => p.studentId)).size;
+  $("questionState").textContent = !state.exam ? "先导入本次考试" : points.length ? `${count}人 · ${points.length}条小题` : "可补充小题";
+  $("questionState").className = `panel-state${points.length ? "" : " muted"}`;
+  const busy = state.generating || state.uploading;
+  $("questionFile").disabled = busy || !state.exam;
+  $("questionExamCode").disabled = busy || !state.questionSource;
+  $("applyQuestionsButton").disabled = busy || !state.questionSource || !state.exam;
+  $("clearQuestionsButton").disabled = busy || state.questionBase == null;
+}
+
+async function importQuestionFile(file) {
+  try {
+    if (!state.exam) throw new Error("请先导入本次考试模板，才能匹配小题。 ");
+    if (file.size > MAX_EXAM_FILE_BYTES) throw new Error("小题文件超过12 MB，请删除无关图片和多余工作表后重试。 ");
+    let source;
+    const fileName = file.name.toLowerCase();
+    if (/\.xlsx?$/.test(fileName)) {
+      if (!window.XLSX) throw new Error("Excel解析组件未加载，请刷新后重试。 ");
+      const buffer = await file.arrayBuffer();
+      const names = [...SUBJECTS.map(s => s.name), "小题得分", "小题成绩", "questions", "question-scores"].map(normalizeKey);
+      const sheets = window.XLSX.read(buffer, {type: "array", bookSheets: true}).SheetNames.filter(name => names.includes(normalizeKey(name)));
+      if (!sheets.length) throw new Error("未找到小题得分表或六科学科工作表。 ");
+      const workbook = window.XLSX.read(buffer, {type: "array", sheets});
+      source = {workbook, codes: window.GradeQuestionData.workbookExamCodes(workbook, window.XLSX)};
+    } else {
+      const contents = await file.text();
+      let rows;
+      if (fileName.endsWith(".csv")) rows = parseCsv(contents).rows;
+      else if (fileName.endsWith(".json")) {
+        const parsed = JSON.parse(contents);
+        rows = Array.isArray(parsed) ? parsed : parsed.questions || parsed.rows || parsed.knowledge;
+      } else throw new Error("请选择Excel、CSV或JSON小题文件。 ");
+      if (!Array.isArray(rows) || !rows.length) throw new Error("小题文件没有可识别的记录。 ");
+      source = {rows, codes: [...new Set(rows.map(row => window.GradeQuestionData.normalizePoint(row).examCode).filter(Boolean))]};
+    }
+    state.questionSource = source;
+    state.questionFileName = file.name;
+    const inferred = state.exam.exam.note.match(/考试代码\s*([\w-]+)/)?.[1] || state.exam.exam.examId;
+    const selected = source.codes.includes(inferred) ? inferred : source.codes.length === 1 ? source.codes[0] : "";
+    $("questionExamCode").innerHTML = `${source.codes.length > 1 ? '<option value="">请选择考试代码</option>' : '<option value="">当前考试</option>'}${source.codes.map(code => `<option value="${escapeHtml(code)}">${escapeHtml(code)}</option>`).join("")}`;
+    $("questionExamCode").value = selected;
+    $("questionStatus").textContent = `已读取 ${file.name}，核对考试代码后点击“应用小题数据”。`;
+    $("questionMessages").hidden = true;
+    renderQuestionSummary();
+  } catch (error) {
+    $("questionStatus").textContent = `读取失败：${error.message} 已有小题保留。`;
+    $("questionFile").value = "";
+  }
+}
+
+function applyQuestionSource() {
+  try {
+    if (!state.exam || !state.questionSource) throw new Error("请先选择小题文件。 ");
+    const code = $("questionExamCode").value;
+    if (state.questionSource.codes.length > 1 && !code) throw new Error("请选择本次考试代码，避免混入历史考试。 ");
+    const rows = state.questionSource.rows || window.GradeQuestionData.workbookRows(state.questionSource.workbook, window.XLSX, code);
+    const result = window.GradeQuestionData.matchRows(rows, state.exam.students, code);
+    $("questionMessages").innerHTML = [...result.errors.slice(0, 12).map(error => `<div class="message error"><b>未应用</b><span>${escapeHtml(error)}</span></div>`), ...result.warnings.map(warning => `<div class="message warning"><b>提醒</b><span>${escapeHtml(warning)}</span></div>`)].join("");
+    $("questionMessages").hidden = !result.errors.length && !result.warnings.length;
+    if (result.errors.length) throw new Error(`${result.errors.length}条小题需要修正，原数据保留。`);
+    if (state.questionBase == null) state.questionBase = clone(state.exam.knowledge);
+    const addresses = new Set(result.rows.map(p => JSON.stringify([p.studentId, p.subjectKey])));
+    state.exam.knowledge = [...state.exam.knowledge.filter(p => !addresses.has(JSON.stringify([p.studentId, p.subjectKey]))), ...result.rows];
+    invalidateGenerated();
+    const names = new Map(state.exam.students.map(s => [s.studentId, s.name]));
+    $("questionStatus").textContent = `${state.questionFileName}：已应用${result.studentCount}人、${result.rows.length}条小题；跳过${result.skippedRows}条其他学生或考试记录。`;
+    $("questionPreview").innerHTML = `<table><thead><tr><th>姓名</th><th>科目</th><th>题号</th><th>得分</th><th>满分</th><th>知识点</th></tr></thead><tbody>${result.rows.slice(0, 8).map(p => `<tr><td>${escapeHtml(names.get(p.studentId))}</td><td>${escapeHtml(SUBJECTS.find(s => s.key === p.subjectKey)?.name)}</td><td>${escapeHtml(p.question)}</td><td>${displayNumber(p.score)}</td><td>${p.maxScoreNote ? "待核实" : displayNumber(p.maxScore)}</td><td>${escapeHtml(p.knowledge || "未标注")}</td></tr>`).join("")}</tbody></table>`;
+    $("questionPreview").hidden = false;
+    renderReview();
+    showToast("小题数据已合并，生成发布包时会一起加密");
+  } catch (error) { $("questionStatus").textContent = `导入未应用：${error.message}`; }
+}
+
+function clearQuestions() {
+  if (state.exam && state.questionBase != null) state.exam.knowledge = clone(state.questionBase);
+  invalidateGenerated();
+  resetQuestions();
+  renderReview();
 }
 
 function projectFromExam(exam) {
@@ -536,12 +635,7 @@ function currentFromExamRecord(examRecord, examMeta, subjects) {
 }
 
 function knowledgeForStudent(exam, studentId) {
-  const result = {};
-  for (const item of exam.knowledge.filter((point) => point.studentId === studentId)) {
-    if (!result[item.subjectKey]) result[item.subjectKey] = { weak: [] };
-    result[item.subjectKey].weak.push({ knowledge: item.knowledge, question: item.question, loss: item.loss });
-  }
-  return result;
+  return window.GradeQuestionData.details(exam.knowledge.filter(point => point.studentId === studentId));
 }
 
 function makeClassSummary(exam) {
@@ -677,14 +771,19 @@ function validateExam(exam) {
   });
   const validStudentIds = new Set(exam.students.map((student) => student.studentId).filter(Boolean));
   const validSubjectKeys = new Set(exam.subjects.map((subject) => subject.key));
+  const questionAddresses = new Set();
   exam.knowledge.forEach((item, index) => {
     const label = item._sourceLabel || `知识点记录第 ${index + 1} 条：`;
     if (!item.studentId) errors.push(`${label}缺少学号/查询识别码。`);
     else if (!validStudentIds.has(item.studentId)) errors.push(`${label}学号 ${item.studentId} 不在本次学生成绩中。`);
     if (!item.subjectKey) errors.push(`${label}缺少科目键。`);
     else if (!validSubjectKeys.has(item.subjectKey)) errors.push(`${label}科目“${item.subjectKey}”无法识别。`);
-    if (!item.knowledge) errors.push(`${label}缺少知识点名称。`);
-    if (item.loss != null && item.loss < 0) errors.push(`${label}失分不能为负数。`);
+    errors.push(...window.GradeQuestionData.pointErrors(item).filter(issue => !(item._issues || []).includes(issue)));
+    if (item.kind === "question") {
+      const address = JSON.stringify([item.studentId, item.subjectKey, item.question]);
+      if (questionAddresses.has(address)) errors.push(`${label}同一学生、科目和题号重复。`);
+      questionAddresses.add(address);
+    }
   });
   return { errors, warnings, validStudents, studentErrorIndexes };
 }
@@ -755,6 +854,11 @@ function setEditingDisabled(disabled) {
   $("clearProjectButton").disabled = disabled;
   $("generateIdsButton").disabled = disabled || !state.exam;
   $("cleanupLegacyToggle").disabled = disabled;
+  $("syncSecondaryToggle").disabled = disabled;
+  $("questionFile").disabled = disabled || !state.exam;
+  $("questionExamCode").disabled = disabled || !state.questionSource;
+  $("applyQuestionsButton").disabled = disabled || !state.questionSource || !state.exam;
+  $("clearQuestionsButton").disabled = disabled || state.questionBase == null;
 }
 
 function renderMessages(result) {
@@ -817,6 +921,7 @@ function fillMetadataForm(exam) {
 }
 
 function renderReview() {
+  renderQuestionSummary();
   if (!state.exam) {
     $("reviewState").textContent = "尚未导入";
     $("reviewState").className = "panel-state muted";
@@ -882,6 +987,7 @@ async function importExam(file) {
     const exam = await readExamFile(file);
     invalidateGenerated();
     state.exam = exam;
+    resetQuestions();
     state.examFileName = file.name;
     $("examDropZone").hidden = true;
     $("examFileRow").hidden = false;
@@ -936,6 +1042,7 @@ async function importProject(file) {
 
 function clearExam() {
   state.exam = null; state.examFileName = "";
+  resetQuestions();
   invalidateGenerated();
   examFile.value = ""; $("examDropZone").hidden = false; $("examFileRow").hidden = true; metadataForm.hidden = true; validationSummary.hidden = true; previewWrap.hidden = true; messageStack.hidden = true; $("importState").textContent = "等待文件"; $("importState").className = "panel-state"; renderReview();
 }
@@ -1028,10 +1135,7 @@ async function uploadRelease() {
   if (!state.generated) { showToast("请先生成加密发布包。"); return; }
   const generated = state.generated;
   const apiRoot = `https://api.github.com/repos/${repoInfo.owner}/${repoInfo.repo}`;
-  const files = [
-    { path: "data/grade-data.v2.json", content: JSON.stringify(generated.bundle, null, 2) },
-    { path: "data/version.json", content: JSON.stringify(generated.version, null, 2) },
-  ];
+  const files = generated.version.replaceFiles.map(path => ({path, content: JSON.stringify(path.endsWith("version.json") ? generated.version : generated.bundle, null, 2)}));
   state.uploading = true;
   setEditingDisabled(true);
   $("generateButton").disabled = true;
@@ -1060,9 +1164,11 @@ async function uploadRelease() {
     const headSha = ref.object.sha;
     const headCommit = await githubRequest(`${apiRoot}/git/commits/${headSha}`, token);
     const treeEntries = [];
+    const uploadedBlobs = new Map();
     for (const file of files) {
       $("uploadStatus").textContent = `正在上传 ${file.path}…`;
-      const blob = await githubRequest(`${apiRoot}/git/blobs`, token, { method: "POST", body: JSON.stringify({ content: textToBase64(file.content), encoding: "base64" }) });
+      const blob = uploadedBlobs.get(file.content) || await githubRequest(`${apiRoot}/git/blobs`, token, { method: "POST", body: JSON.stringify({ content: textToBase64(file.content), encoding: "base64" }) });
+      uploadedBlobs.set(file.content, blob);
       treeEntries.push({ path: file.path, mode: "100644", type: "blob", sha: blob.sha });
     }
     treeEntries.push(...cleanupEntries);
@@ -1197,7 +1303,10 @@ function generateMissingIds() {
   let generated = 0;
   for (const student of state.exam.students) {
     if (!isWeakStudentId(student.studentId)) continue;
+    const previousId = student.studentId;
     student.studentId = randomStudentId(existing);
+    for (const point of state.exam.knowledge) if (point.studentId === previousId && (previousId || point.name === student.name)) point.studentId = student.studentId;
+    for (const point of state.questionBase || []) if (point.studentId === previousId && (previousId || point.name === student.name)) point.studentId = student.studentId;
     generated += 1;
   }
   if (generated) {
@@ -1250,7 +1359,7 @@ async function buildEncryptedBundle(project) {
     releaseId,
     bundleSha256,
     generatedBy: "grade-query-publisher-v3",
-    replaceFiles: ["data/grade-data.v2.json", "data/version.json"],
+    replaceFiles: ["data/grade-data.v2.json", "data/version.json", ...($("syncSecondaryToggle").checked ? ["student-results/data/grade-data.v2.json", "student-results/data/version.json"] : [])],
   };
   return { bundle, version };
 }
@@ -1258,12 +1367,14 @@ async function buildEncryptedBundle(project) {
 async function makeZip(bundle, version) {
   if (!window.JSZip) return null;
   const zip = new window.JSZip();
-  zip.file("data/grade-data.v2.json", JSON.stringify(bundle, null, 2));
-  zip.file("data/version.json", JSON.stringify(version, null, 2));
-  zip.file("README-发布说明.txt", `成绩查询发布包\n\n1. 将 data/grade-data.v2.json 和 data/version.json 上传到现有仓库的 data/ 目录。\n2. 覆盖同名文件即可，查询页会自动优先读取 v2 数据。\n3. 不要把项目备份文件上传到公开仓库；项目备份仅用于下一次考试继续合并。\n4. 发布编号：${version.releaseId}\n5. 数据校验：SHA-256 ${version.bundleSha256}\n6. 本包生成时间：${version.generatedAt}\n`);
+  for (const path of version.replaceFiles) zip.file(path, JSON.stringify(path.endsWith("version.json") ? version : bundle, null, 2));
+  zip.file("README-发布说明.txt", `成绩查询发布包\n\n1. 覆盖现有仓库中的以下文件：\n${version.replaceFiles.map(path => `   ${path}`).join("\n")}\n2. 查询页会自动读取新的加密成绩和小题。\n3. 不要把项目备份文件上传到公开仓库；项目备份仅用于下一次考试继续合并。\n4. 发布编号：${version.releaseId}\n5. 数据校验：SHA-256 ${version.bundleSha256}\n6. 本包生成时间：${version.generatedAt}\n`);
   try {
-    const response = await fetch("index.html", { cache: "no-store" });
-    if (response.ok) zip.file("index.html", await response.text());
+    const assets = ["index.html", "shared-crypto.js", "question-data.js", "question-data.css", ...(version.replaceFiles.some(path => path.startsWith("student-results/")) ? ["student-results/index.html", "student-results/shared-crypto.js"] : [])];
+    for (const asset of assets) {
+      const response = await fetch(asset, {cache: "no-store"});
+      if (response.ok) zip.file(asset, await response.text());
+    }
   } catch (error) {
     // Local file mode cannot fetch index.html; the data-only ZIP remains useful.
   }
@@ -1345,6 +1456,10 @@ examDropZone.addEventListener("dragover", (event) => { event.preventDefault(); e
 examDropZone.addEventListener("dragleave", () => examDropZone.classList.remove("dragging"));
 examDropZone.addEventListener("drop", (event) => { event.preventDefault(); examDropZone.classList.remove("dragging"); const file = event.dataTransfer.files[0]; if (file) importExam(file); });
 examFile.addEventListener("change", () => { if (examFile.files[0]) importExam(examFile.files[0]); });
+$("questionFile").addEventListener("change", () => { if ($("questionFile").files[0]) importQuestionFile($("questionFile").files[0]); });
+$("applyQuestionsButton").addEventListener("click", applyQuestionSource);
+$("clearQuestionsButton").addEventListener("click", clearQuestions);
+$("syncSecondaryToggle").addEventListener("change", () => { invalidateGenerated(); renderReview(); });
 projectFile.addEventListener("change", () => { if (projectFile.files[0]) importProject(projectFile.files[0]); });
 $("chooseExamButton").addEventListener("click", (event) => { event.stopPropagation(); examFile.click(); });
 $("clearExamButton").addEventListener("click", clearExam);

@@ -2,6 +2,7 @@ import assert from "node:assert/strict";
 import { webcrypto } from "node:crypto";
 import fs from "node:fs";
 import vm from "node:vm";
+import { createRequire } from "node:module";
 
 class StubElement {
   constructor(id = "") {
@@ -72,12 +73,15 @@ function baseSandbox(document, fetchImpl = async () => ({ ok: false, text: async
 
 const publisherDom = makeDom();
 const publisherSandbox = baseSandbox(publisherDom.document);
+publisherSandbox.XLSX = createRequire(import.meta.url)("../vendor/xlsx.full.min.js");
 vm.createContext(publisherSandbox);
 const sharedSource = fs.readFileSync(new URL("../shared-crypto.js", import.meta.url), "utf8");
+const questionSource = fs.readFileSync(new URL("../question-data.js", import.meta.url), "utf8");
 const publisherSource = fs.readFileSync(new URL("../publisher.js", import.meta.url), "utf8");
 vm.runInContext(sharedSource, publisherSandbox);
+vm.runInContext(questionSource, publisherSandbox);
 vm.runInContext(`${publisherSource}\n;globalThis.__publisher = {
-  normalizeExam, validateExam, projectFromExam, mergeExamIntoProject, getMergePreview,
+  normalizeExam, validateExam, projectFromExam, mergeExamIntoProject, getMergePreview, parseXlsx,
   renderReview, currentProject, buildEncryptedBundle, sha256Hex, uploadRelease,
   deriveV3Keyring: globalThis.GradeQueryCrypto.deriveV3Keyring,
   generateMissingIds, isWeakStudentId, buildLegacyCleanupEntries,
@@ -88,12 +92,19 @@ const publisher = publisherSandbox.__publisher;
 const template = JSON.parse(fs.readFileSync(new URL("../templates/exam-template.json", import.meta.url), "utf8"));
 const sampleExam = publisher.normalizeExam(template);
 assert.match(publisher.validateExam(sampleExam).errors.join("\n"), /模板示例学生/);
+const excelTemplate = fs.readFileSync(new URL("../templates/exam-template.xlsx", import.meta.url));
+const importedTemplate = publisher.parseXlsx(excelTemplate.buffer.slice(excelTemplate.byteOffset, excelTemplate.byteOffset + excelTemplate.byteLength));
+const importedQuestions = importedTemplate.knowledge.filter(point => point.kind === "question");
+assert.equal(importedQuestions.length, 2, "考试Excel中的完整小题工作表必须同时导入");
+assert.equal(importedQuestions[0].score, 0);
+assert.equal(importedQuestions[1].score, null);
 
 const cleanInput = structuredClone(template);
 cleanInput.exam = { ...cleanInput.exam, examId: "2026-first", examName: "第一次月考", note: "" };
 cleanInput.students[0] = { ...cleanInput.students[0], studentId: "S24001", name: "学生甲" };
 cleanInput.students[1] = { ...cleanInput.students[1], studentId: "S24002", name: "学生乙" };
 cleanInput.knowledge[0].studentId = "S24001";
+for (const point of cleanInput.questions || []) point.studentId = "S24001";
 const firstExam = publisher.normalizeExam(cleanInput);
 assert.equal(publisher.validateExam(firstExam).errors.length, 0);
 
@@ -158,6 +169,7 @@ assert.equal(replacedProject.exams.length, 1);
 assert.equal(replacedProject.students.length, 1, "覆盖同编号时，已从该场考试移除且没有其他历史的学生不应残留");
 assert.equal(replacedProject.students[0].current.totalScore, 471);
 
+publisherDom.get("syncSecondaryToggle").checked = true;
 const release = await publisher.buildEncryptedBundle(mergedProject);
 assert.equal(release.bundle.recordCount, 2);
 assert.equal(release.bundle.studentCount, 2);
@@ -168,6 +180,7 @@ publisherDom.get("githubRepo").value = "example/grade-query";
 publisherDom.get("githubBranch").value = "main";
 publisherDom.get("githubToken").value = "github_pat_test_only";
 let blobIndex = 0;
+let uploadedTree = [];
 publisherSandbox.fetch = async (url, options = {}) => {
   const method = options.method || "GET";
   let body;
@@ -175,7 +188,7 @@ publisherSandbox.fetch = async (url, options = {}) => {
   else if (url.includes("/git/ref/heads/")) body = { object: { sha: "head-sha" } };
   else if (url.endsWith("/git/commits/head-sha")) body = { tree: { sha: "base-tree" } };
   else if (url.endsWith("/git/blobs") && method === "POST") body = { sha: `blob-${++blobIndex}` };
-  else if (url.endsWith("/git/trees") && method === "POST") body = { sha: "release-tree" };
+  else if (url.endsWith("/git/trees") && method === "POST") { uploadedTree = JSON.parse(options.body).tree; body = { sha: "release-tree" }; }
   else if (url.endsWith("/git/commits") && method === "POST") body = { sha: "release-commit", html_url: "https://github.com/example/grade-query/commit/release-commit" };
   else if (url.includes("/git/refs/heads/") && method === "PATCH") body = {};
   else if (url.includes("/contents/data/version.json")) body = { content: Buffer.from(JSON.stringify(release.version)).toString("base64") };
@@ -185,6 +198,9 @@ publisherSandbox.fetch = async (url, options = {}) => {
 };
 await publisher.uploadRelease();
 assert.equal(blobIndex, 2);
+assert.equal(uploadedTree.length, 4, "主入口和独立入口必须作为同一提交发布");
+assert.equal(uploadedTree[0].sha, uploadedTree[2].sha, "相同加密包只上传一次");
+assert.ok(uploadedTree.some(entry => entry.path === "student-results/data/version.json"));
 assert.match(publisherDom.get("uploadStatus").textContent, /发布完成/);
 assert.equal(publisherDom.get("githubToken").value, "");
 assert.match(publisherDom.get("pagesLink").href, /^https:\/\/example\.github\.io\/grade-query\/\?v=/);
@@ -211,6 +227,7 @@ function makeQueryHarness(version, bundle = release.bundle) {
   const sandbox = baseSandbox(queryDom.document, fetchImpl);
   vm.createContext(sandbox);
   vm.runInContext(sharedSource, sandbox);
+  vm.runInContext(questionSource, sandbox);
   vm.runInContext(`${querySource}\n;globalThis.__query = {
     loadVersionInfo, loadDataBundle, loadStudent, createInsights, rankTimeline,
     get activeDataMeta() { return activeDataMeta; }

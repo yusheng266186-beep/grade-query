@@ -1,0 +1,16 @@
+.question-note { margin: 0 0 12px; color: #68787d; font-size: 12px; line-height: 1.7; }
+.question-subject { min-width: 0; border: 1px solid #edf0ec; border-radius: 12px; overflow: hidden; }
+.question-subject > summary { display: flex; flex-wrap: wrap; align-items: center; gap: 5px 14px; padding: 14px; cursor: pointer; background: #fafaf7; list-style: none; }
+.question-subject > summary::-webkit-details-marker { display: none; }
+.question-subject > summary::after { content: "＋"; margin-left: auto; color: #587079; }
+.question-subject[open] > summary::after { content: "−"; }
+.question-subject > summary span { color: #68787d; font-size: 11px; }
+.question-subject > .question-note { padding: 10px 14px 0; margin-bottom: 6px; }
+.question-table-wrap { max-width: 100%; overflow-x: auto; }
+.question-table { width: 100%; border-collapse: collapse; text-align: left; font-size: 12px; font-variant-numeric: tabular-nums; }
+.question-table th, .question-table td { padding: 10px 12px; border-top: 1px solid #edf0ec; }
+.question-table thead th { color: #68787d; font-size: 11px; white-space: nowrap; }
+.question-table tbody th { font-weight: 500; white-space: nowrap; }
+.question-table td:nth-child(2) { min-width: 130px; line-height: 1.6; }
+.question-table td:nth-child(n+3) { white-space: nowrap; }
+@media (max-width: 480px) { .question-subject > summary { padding: 12px; } .question-table th, .question-table td { padding: 9px 8px; } }

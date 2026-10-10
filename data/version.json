@@ -1,19 +1,21 @@
 {
   "kind": "grade-query-version",
   "schemaVersion": 2,
-  "dataVersion": "v3-52-1791628582257",
-  "generatedAt": "2026-10-10T10:36:22.257Z",
+  "dataVersion": "v3-52-questions-1791630612651",
+  "generatedAt": "2026-10-10T11:10:12.651Z",
   "className": "高三4班",
   "studentCount": 49,
   "examCount": 8,
   "latestExam": "高三第二次月考",
   "latestExamId": "2026-grade3-monthly-52",
   "recordCount": 49,
-  "releaseId": "v3-52-1791628582257-529571808db2",
-  "bundleSha256": "529571808db26c505e3ea795b921de7cc83ed88bb8f3558cbd69a815d255167f",
-  "generatedBy": "grade-query-verified-exam52-import",
+  "releaseId": "v3-52-questions-1791630612651-dcfcb4b0fc01",
+  "bundleSha256": "dcfcb4b0fc01d48c6ff680cd85ac8177452a3409eb030d9d42a4cc77b103d78a",
+  "generatedBy": "grade-query-verified-question52-import",
   "replaceFiles": [
     "data/grade-data.v2.json",
-    "data/version.json"
+    "data/version.json",
+    "student-results/data/grade-data.v2.json",
+    "student-results/data/version.json"
   ]
 }
