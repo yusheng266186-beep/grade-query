@@ -197,8 +197,7 @@
             const knowledge=sourceOrder?'列序记录':/待核对|待核实/.test(String(p.knowledge||''))?'原始记录':p.knowledge||'知识点未提供';
             const loss=known&&p.score!=null?p.maxScore-p.score:null;
             const status=p.score==null?'未录入':!known?'原始分':loss===0?'满分':`失 ${fmt(loss)} 分`;
-            const rate=known&&p.score!=null?Math.max(0,Math.min(100,p.score/p.maxScore*100)):null;
-            return `<article class="question-card question-${state}" data-question-state="${state}"><div class="question-label"><b>${escape(label)}</b><p>${escape(knowledge)}</p></div><div class="question-result"><span class="question-score"><strong>${fmt(p.score)}</strong>${known?`<span>/ ${fmt(p.maxScore)}</span>`:''}</span><small>${status}</small></div>${rate!=null?`<span class="question-meter" aria-hidden="true"><i style="width:${rate}%"></i></span>`:''}</article>`;
+            return `<article class="question-card question-${state}" data-question-state="${state}"><div class="question-label"><b>${escape(label)}</b><button type="button" class="question-knowledge" data-question-knowledge aria-expanded="false" title="${escape(knowledge)}">${escape(knowledge)}</button></div><div class="question-result"><span class="question-score"><strong>${fmt(p.score)}</strong>${known?`<span>/ ${fmt(p.maxScore)}</span>`:''}</span><small>${status}</small></div></article>`;
           }).join('')}</div></div></details>`);
       } else if (data?.weak?.length) {
         sections.push(...data.weak.slice(0, 2).map(p => `<div class="knowledge-item"><b>${escape(subject.name)}</b><span>${escape(p.knowledge)} · ${escape(p.question)}</span><small>失 ${fmt(p.loss)} 分</small></div>`));
@@ -210,6 +209,13 @@
     if(!container||container.dataset.questionBound)return;
     container.dataset.questionBound='true';
     container.addEventListener('click',event=>{
+      const knowledge=event.target.closest('[data-question-knowledge]');
+      if(knowledge&&container.contains(knowledge)){
+        const expanded=knowledge.getAttribute('aria-expanded')!=='true';
+        knowledge.setAttribute('aria-expanded',String(expanded));
+        knowledge.closest('.question-card').classList.toggle('question-expanded',expanded);
+        return;
+      }
       const button=event.target.closest('[data-question-filter]');
       if(!button||!container.contains(button))return;
       const section=button.closest('.question-subject');
