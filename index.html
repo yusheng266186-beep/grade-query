@@ -3,7 +3,7 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
-  <link rel="stylesheet" href="question-data.css?v=20261010-questions">
+  <link rel="stylesheet" href="question-data.css?v=20261106-cards">
   <meta name="color-scheme" content="light">
   <meta name="theme-color" content="#173c4b">
   <meta name="robots" content="noindex,nofollow,noarchive">
@@ -451,6 +451,7 @@
       .report-actions .ghost-btn { flex: 1; }
     }
   </style>
+  <link rel="stylesheet" href="report-layout.css?v=20261106-ranks">
 </head>
 <body>
   <main>
@@ -486,7 +487,8 @@
   </main>
 
   <script src="shared-crypto.js?v=20260829-1"></script>
-  <script src="question-data.js?v=20261010-questions"></script>
+  <script src="question-data.js?v=20261106-cards"></script>
+  <script src="report-metrics.js?v=20261106-ranks"></script>
   <script>
     "use strict";
     const STUDENTS = [];
@@ -510,6 +512,9 @@
       "高二下半期考试": "半期考试",
       "高二下第二次月考": "第二次月考",
       "高二下零诊": "零诊",
+      "高三第一次月考": "高三一月考",
+      "高三第二次月考": "高三二月考",
+      "高三上学期期中考试": "高三期中",
     };
 
     const queryView = document.getElementById("queryView");
@@ -831,7 +836,7 @@
     loadVersionInfo();
 
     function subjectRows(student) {
-      return SUBJECTS.map((subject) => {
+      return SUBJECTS.filter(subject=>number(student.current.subjects?.[subject.key]?.score)!=null).map((subject) => {
         const item = student.current.subjects?.[subject.key] || { score: null, rank: null, controlDiff: null, bachelorDiff: null };
         const status = statusFor(item.controlDiff, item.bachelorDiff);
         const controlLine = item.score != null && item.controlDiff != null ? item.score - item.controlDiff : null;
@@ -844,21 +849,21 @@
             <div class="subject-top">
               <span class="subject-name">${subject.name}</span>
               <strong class="subject-score">${fmt(item.score)}<small>分</small></strong>
-              <span class="subject-rank">科目排名 ${fmt(item.rank, 0)}</span>
-              <span class="state-pill ${status.cls}">${status.label}</span>
+              ${window.GradeReportMetrics.rank(item.gradeRank)!=null?`<span class="subject-rank">年级第 <b>${fmt(item.gradeRank,0)}</b> 名</span>`:''}
             </div>
+            ${number(item.controlDiff)!=null||number(item.bachelorDiff)!=null?`<span class="state-pill ${status.cls}">${status.label}</span>`:''}
             <div class="meter" aria-hidden="true">
               <i class="meter-fill" style="width:${scorePct}%"></i>
               <b class="meter-mark bachelor" style="${bachelorPct == null ? "display:none" : `left:${bachelorPct}%`}"></b>
               <b class="meter-mark control" style="${controlPct == null ? "display:none" : `left:${controlPct}%`}"></b>
             </div>
             <div class="subject-foot">
-              <span>本科线 ${fmt(bachelorLine)}</span>
+              ${bachelorLine!=null?`<span>本科线 ${fmt(bachelorLine)}</span>`:''}
               <span class="subject-diffs">
-                <b class="${diffClass(item.bachelorDiff)}">本科 ${signed(item.bachelorDiff)}</b>
-                <b class="${diffClass(item.controlDiff)}">特控 ${signed(item.controlDiff)}</b>
+                ${number(item.bachelorDiff)!=null?`<b class="${diffClass(item.bachelorDiff)}">本科 ${signed(item.bachelorDiff)}</b>`:''}
+                ${number(item.controlDiff)!=null?`<b class="${diffClass(item.controlDiff)}">特控 ${signed(item.controlDiff)}</b>`:''}
               </span>
-              <span>特控线 ${fmt(controlLine)}</span>
+              ${controlLine!=null?`<span>特控线 ${fmt(controlLine)}</span>`:''}
             </div>
           </article>`;
       }).join("");
@@ -872,20 +877,6 @@
       const belowControl = pairs.filter((item) => number(item.controlDiff) != null && number(item.controlDiff) < 0).sort((a, b) => Math.abs(a.controlDiff) - Math.abs(b.controlDiff));
       const belowBachelor = pairs.filter((item) => number(item.bachelorDiff) != null && number(item.bachelorDiff) < 0).sort((a, b) => Math.abs(a.bachelorDiff) - Math.abs(b.bachelorDiff));
       const focus = belowControl[0] ?? belowBachelor[0] ?? strongest[0];
-      const exams = (student.exams || []).filter((exam) => number(exam.total) != null);
-      const latest = exams[exams.length - 1];
-      const previous = exams[exams.length - 2];
-      const previousSameScope = latest ? [...exams.slice(0, -1)].reverse().find((exam) => exam.scope === latest.scope && number(exam.rank) != null) : null;
-      const scoreChange = latest && previous ? number(latest.total) - number(previous.total) : null;
-      const rankChange = latest && previousSameScope && number(latest.rank) != null ? number(previousSameScope.rank) - number(latest.rank) : null;
-      const scopeName = latest?.scope === "city" ? "市排名" : latest?.scope === "class" ? "班级排名" : "校排名";
-      const rankText = rankChange == null
-        ? ""
-        : rankChange > 0
-          ? `；同口径${scopeName}前进${rankChange}名。`
-          : rankChange < 0
-            ? `；同口径${scopeName}后移${Math.abs(rankChange)}名。`
-            : `；同口径${scopeName}保持不变。`;
       const focusText = !focus
         ? "当前报告没有足够的科目线数据生成分析。"
         : number(focus.controlDiff) == null && number(focus.bachelorDiff) == null
@@ -897,17 +888,18 @@
           : number(focus.controlDiff) != null && number(focus.controlDiff) < 0
             ? `${focus.name}距离特控有效分${Math.abs(focus.controlDiff).toFixed(1)}分。`
           : `${focus.name}目前处于较稳定的上线区间。`;
-      const latestName = latest?.name || student.currentExam?.examName || "本次考试";
-      const previousName = previous?.name || "上一次考试";
       return [
         { title: "优势表现", text: strongest.length ? `${strongest.map((item) => item.name).join("、")}是本次相对表现更突出的学科。` : "当前科目数据不足，暂不生成优势学科判断。" },
         { title: "关注方向", text: focusText },
-        { title: "阶段变化", text: scoreChange == null ? `${latestName}是当前收录的第一场考试，后续发布后会自动形成趋势。` : `${latestName}总分较${previousName}${scoreChange >= 0 ? "上升" : "下降"}${Math.abs(scoreChange).toFixed(1)}分${rankText || "。"}` },
+        { title: "阶段变化", text: stageRankText(student) },
       ];
     }
 
     function rankTimeline(student) {
       return (student.exams || []).map((exam) => {
+        const grade=window.GradeReportMetrics.gradeRank(exam);
+        if(grade!=null)return `<div class="rank-stop"><span class="scope-tag scope-school">年级排名</span><strong>第 ${fmt(grade,0)} 名</strong><p>${escapeHtml(EXAM_SHORT[exam.name]||exam.name)}</p>${number(exam.gradeCounts?.total)!=null?`<div class="zero-ranks">本场 ${fmt(exam.gradeCounts.total,0)} 人</div>`:''}</div>`;
+        if(window.GradeReportMetrics.rank(exam.rank)==null)return '';
         const scope = exam.scope === "city" ? { label: "市排名", cls: "scope-city", key: "cityRank" } : exam.scope === "class" ? { label: "班排名", cls: "scope-school", key: "classRank" } : { label: "校排名", cls: "scope-school", key: "schoolRank" };
         const extra = [["市", exam.cityRank], ["校", exam.schoolRank], ["班", exam.classRank]]
           .filter(([label, value]) => number(value) != null && !((label === "市" && scope.key === "cityRank") || (label === "校" && scope.key === "schoolRank") || (label === "班" && scope.key === "classRank")))
@@ -917,11 +909,19 @@
         return `
           <div class="rank-stop">
             <span class="scope-tag ${scope.cls}">${scope.label}</span>
-            <strong>第 ${fmt(exam.rank, 0)} 名</strong>
+            ${number(exam.rank)>0?`<strong>第 ${fmt(exam.rank,0)} 名</strong>`:'<strong>未录入</strong>'}
             <p>${escapeHtml(EXAM_SHORT[exam.name] || exam.name)}</p>
             ${extra ? `<div class="zero-ranks">${escapeHtml(extra)}</div>` : ""}
           </div>`;
       }).join("");
+    }
+
+    function stageRankText(student) {
+      const entries=window.GradeReportMetrics.series(student);
+      const change=window.GradeReportMetrics.comparison(entries);
+      if(!change)return '当前可用名次不足两次，暂不判断阶段变化。';
+      const n=change.improvement;
+      return `本次年级第${change.current.rank}名，较${EXAM_SHORT[change.previous.label]||change.previous.label}${n>0?'前进'+n+'名':n<0?'后移'+Math.abs(n)+'名':'名次持平'}。按同一校内物理类范围比较，各次参考人数见趋势明细。`;
     }
 
     function knowledgeContent(student) {
@@ -949,9 +949,7 @@
       const trendButtons = [{ key: "total", name: "总分" }, ...SUBJECTS].map((subject, index) =>
         `<button class="trend-tab ${index === 0 ? "active" : ""}" type="button" data-trend="${subject.key}">${subject.name}</button>`
       ).join("");
-      const examCards = (student.exams || []).map((exam) => `
-        <div class="exam-card"><strong>${fmt(exam.total)}</strong><span>${escapeHtml(EXAM_SHORT[exam.name] || exam.name)}</span></div>`
-      ).join("") || `<div class="exam-card"><strong>—</strong><span>暂无记录</span></div>`;
+      const rankCards=[['全市排名',current.cityRank,'市级参考范围'],['年级排名',current.gradeRank ?? current.schoolRank,'校内物理类'],['班级排名',current.classRank,'本场班级范围']].filter(([,value])=>window.GradeReportMetrics.rank(value)!=null);
       const rankingHtml = rankTimeline(student) || `<p class="panel-subtitle">暂无可展示的历次排名记录。</p>`;
 
       reportShell.innerHTML = `
@@ -966,17 +964,13 @@
             <h1 class="student-name">${escapeHtml(student.name)}</h1>
             <span class="class-tag">${escapeHtml(student.className)}</span>
             <div class="score-line"><strong class="score-number">${fmt(current.totalScore)}</strong><span class="score-unit">总分</span></div>
-            <div class="status-badge"><i class="status-dot"></i>${overall.label}</div>
+            ${number(current.controlDiff)!=null||number(current.bachelorDiff)!=null?`<div class="status-badge"><i class="status-dot"></i>${overall.label}</div>`:''}
           </div>
           <div class="hero-data">
-            <div class="rank-grid">
-              <div class="rank-card"><span>全市排名</span><strong>${fmt(current.cityRank, 0)}</strong><small>市级参考范围</small></div>
-              <div class="rank-card"><span>校内排名</span><strong>${fmt(current.schoolRank, 0)}</strong><small>年级成绩排名</small></div>
-              <div class="rank-card"><span>班级排名</span><strong>${fmt(current.classRank, 0)}</strong><small>本班参考范围</small></div>
-            </div>
+            ${rankCards.length?`<div class="rank-grid">${rankCards.map(([label,value,note])=>`<div class="rank-card"><span>${label}</span><strong>${fmt(value,0)}</strong><small>${note}</small></div>`).join('')}</div>`:''}
             <div class="cutoff-grid">
-              <div class="cutoff-card"><span>特控线差</span><strong>${signed(current.controlDiff)} 分</strong><small>特控线 ${fmt(current.controlLine)} 分</small></div>
-              <div class="cutoff-card"><span>本科线差</span><strong>${signed(current.bachelorDiff)} 分</strong><small>本科线 ${fmt(current.bachelorLine)} 分</small></div>
+              ${number(current.controlDiff)!=null?`<div class="cutoff-card"><span>特控线差</span><strong>${signed(current.controlDiff)} 分</strong><small>特控线 ${fmt(current.controlLine)} 分</small></div>`:''}
+              ${number(current.bachelorDiff)!=null?`<div class="cutoff-card"><span>本科线差</span><strong>${signed(current.bachelorDiff)} 分</strong><small>本科线 ${fmt(current.bachelorLine)} 分</small></div>`:''}
             </div>
           </div>
         </header>
@@ -984,7 +978,7 @@
         <div class="section-grid">
           <section class="panel fade-in">
             <div class="panel-head">
-              <div><h2 class="panel-title">各科上线情况</h2><p class="panel-subtitle">成绩点与本科、特控有效分放在同一条刻度上</p></div>
+              <div><h2 class="panel-title">学科表现</h2><p class="panel-subtitle">查看分数、年级位置与达线情况</p></div>
               <span class="tiny-legend">金色：本科线 · 绿色：特控线</span>
             </div>
             <div class="subjects">${subjectRows(student)}</div>
@@ -997,21 +991,24 @@
 
         <section class="panel trend-panel fade-in">
           <div class="panel-head">
-            <div><h2 class="panel-title">阶段成绩变化</h2><p class="panel-subtitle">选择科目查看${examCount || "历次"}场考试的分数走势</p></div>
+            <div><h2 class="panel-title">年级名次变化</h2><p class="panel-subtitle">按对应科目的名次绘图，分数保留在每次考试明细中</p></div>
             <div class="trend-tabs">${trendButtons}</div>
           </div>
-          <div class="chart-wrap"><canvas id="trendCanvas" role="img" aria-label="历次成绩折线图"></canvas><div class="chart-tooltip" id="chartTooltip" hidden></div><div class="chart-empty" id="chartEmpty" hidden>历次数据不足，暂不绘制趋势线</div></div>
-          <div class="exam-strip">${examCards}</div>
+          <p class="trend-guide"><b>越靠上，名次越靠前</b><span>点曲线或下方考次查看</span></p>
+          <div class="chart-wrap"><canvas id="trendCanvas" role="img" aria-label="历次年级名次变化图"></canvas><div class="chart-tooltip" id="chartTooltip" hidden></div><div class="chart-empty" id="chartEmpty" hidden>暂无对应科目的年级名次</div></div>
+          <div class="trend-selection" id="trendSelection" aria-live="polite"></div>
+          <div class="exam-strip" id="examStrip" aria-label="历次考试明细"></div>
+          <p class="trend-method">范围：本校物理类，按原表已提供的当场有效成绩重排，同分并列。不同考次人数可能不同；缺失名次保留空档。仅有一次记录时显示单点。</p>
         </section>
 
         <section class="panel trend-panel fade-in">
-          <div class="panel-head"><div><h2 class="panel-title">历次排名记录</h2><p class="panel-subtitle">每场考试按模板中的排名范围展示，不同范围不直接比较</p></div></div>
+          <div class="panel-head"><div><h2 class="panel-title">历次总分名次</h2><p class="panel-subtitle">统一查看本校物理类的总分位置</p></div></div>
           <div class="rank-timeline">${rankingHtml}</div>
         </section>
 
         <div class="detail-grid">
           <details class="panel fade-in">
-            <summary><div><h2 class="panel-title">小题与知识点</h2><p class="panel-subtitle">展开查看各科小题得分、满分和知识点</p></div><span class="summary-sign">＋</span></summary>
+            <summary><div><h2 class="panel-title">小题得分</h2><p class="panel-subtitle">按学科查看，可筛选失分题与满分题</p></div><span class="summary-sign">＋</span></summary>
             <div class="detail-body"><div class="knowledge-list">${knowledgeContent(student)}</div></div>
           </details>
           <details class="panel fade-in">
@@ -1020,11 +1017,17 @@
           </details>
         </div>
 
-        <p class="source-note">数据版本 ${escapeHtml(activeDataMeta.releaseId || activeDataMeta.dataVersion || "legacy")} · 生成于 ${escapeHtml(activeDataMeta.generatedAt || "—")}。<br>排名范围不同，请结合“市排名 / 校排名 / 班级排名”标签阅读。</p>
+        <p class="source-note">成绩仅供学生本人及家长查阅。<br>数据更新于 ${escapeHtml((activeDataMeta.generatedAt||'').slice(0,10)||'—')}。</p>
         <div class="report-actions" aria-label="报告操作"><button class="ghost-btn" type="button" id="reportTopButton">回到顶部</button><button class="ghost-btn report-action-main" type="button" id="backButtonBottom">继续查询</button></div>`;
 
       queryView.hidden = true;
       reportView.hidden = false;
+      window.GradeQuestionData.bind(reportShell);
+      if(!window.GradeQuestionData.hasData(student.knowledge))reportShell.querySelector('.detail-grid > details')?.remove();
+      reportShell.querySelector('#examStrip').addEventListener('click',event=>{
+        const button=event.target.closest('[data-exam-index]');if(!button)return;
+        const canvas=document.getElementById('trendCanvas');drawTrend(student,canvas.__chartState?.key||'total',Number(button.dataset.examIndex));
+      });
       window.scrollTo(0, 0);
       document.getElementById("backButton").addEventListener("click", resetQuery);
       document.getElementById("backButtonBottom").addEventListener("click", resetQuery);
@@ -1083,7 +1086,7 @@
       if (!canvas || !tooltip) return;
       const showTooltip = (event) => {
         const chartState = canvas.__chartState;
-        if (!chartState?.entries?.length || chartState.entries.length < 2) return;
+        if (!chartState?.entries?.length) return;
         const rect = canvas.getBoundingClientRect();
         const localX = Math.max(0, Math.min(rect.width, event.clientX - rect.left));
         let nearest = 0;
@@ -1093,7 +1096,7 @@
           if (next < distance) { distance = next; nearest = index; }
         });
         const entry = chartState.entries[nearest];
-        tooltip.innerHTML = `<b>${escapeHtml(entry.label)}</b><span>${escapeHtml(chartState.subjectName)}：${fmt(entry.value)} 分</span>`;
+        tooltip.innerHTML = `<b>${escapeHtml(entry.label)}</b><span>${entry.rank!=null?'年级第 '+fmt(entry.rank,0)+' 名':'名次未录入'}</span>${entry.score!=null?`<span>${escapeHtml(chartState.subjectName)} ${fmt(entry.score)} 分</span>`:''}`;
         tooltip.hidden = false;
         const wrap = canvas.parentElement;
         const tooltipWidth = tooltip.offsetWidth || 130;
@@ -1103,16 +1106,23 @@
       };
       const hideTooltip = () => { tooltip.hidden = true; };
       canvas.addEventListener("pointermove", showTooltip);
-      canvas.addEventListener("pointerdown", showTooltip);
+      canvas.addEventListener("pointerdown",event=>{
+        showTooltip(event);
+        const state=canvas.__chartState;if(!state?.entries.length)return;
+        const x=event.clientX-canvas.getBoundingClientRect().left;
+        const index=state.xValues.reduce((nearest,value,i)=>Math.abs(value-x)<Math.abs(state.xValues[nearest]-x)?i:nearest,0);
+        drawTrend(student,state.key,index);
+      });
       canvas.addEventListener("pointerleave", hideTooltip);
       canvas.addEventListener("pointercancel", hideTooltip);
+      canvas.addEventListener("blur", hideTooltip);
       canvas.addEventListener("keydown", (event) => {
         if (!["ArrowLeft", "ArrowRight"].includes(event.key)) return;
         const chartState = canvas.__chartState;
         if (!chartState?.entries?.length) return;
         const current = Number(canvas.dataset.activePoint || 0);
         const next = Math.max(0, Math.min(chartState.entries.length - 1, current + (event.key === "ArrowRight" ? 1 : -1)));
-        canvas.dataset.activePoint = next;
+        drawTrend(student,chartState.key,next);
         const rect = canvas.getBoundingClientRect();
         showTooltip({ clientX: rect.left + chartState.xValues[next], clientY: rect.top + 20 });
       });
@@ -1120,15 +1130,26 @@
       canvas.dataset.activePoint = "0";
     }
 
-    function drawTrend(student, key) {
+    function drawTrend(student, key, selectedIndex) {
       const canvas = document.getElementById("trendCanvas");
       const empty = document.getElementById("chartEmpty");
       if (!canvas) return;
-      const entries = (student.exams || [])
-        .map((exam) => ({ label: EXAM_SHORT[exam.name] || exam.name, value: number(exam.scores?.[key]) }))
-        .filter((entry) => entry.value != null);
+      const model=window.GradeReportMetrics;
+      const entries=model.series(student,key);
+      const subjectName=key==='total'?'总分':SUBJECTS.find(s=>s.key===key)?.name||key;
+      const previousState=canvas.__chartState;
+      if(previousState?.key!==key){const tooltip=document.getElementById('chartTooltip');if(tooltip)tooltip.hidden=true;}
+      const selected=Math.max(0,Math.min(entries.length-1,selectedIndex??(previousState?.key===key?Number(canvas.dataset.activePoint):entries.length-1)));
+      canvas.dataset.activePoint=String(selected);
+      const selectedEntry=entries[selected];
+      const change=model.comparison(entries,selected);
+      const selection=document.getElementById('trendSelection');
+      if(selection)selection.innerHTML=selectedEntry?`<span class="selection-name">${escapeHtml(selectedEntry.label)} · ${subjectName}</span><strong>${selectedEntry.rank!=null?'第 '+fmt(selectedEntry.rank,0)+' <small>名</small>':'<small>名次未录入</small>'}</strong>${selectedEntry.count?`<span class="selection-score">/ ${fmt(selectedEntry.count,0)} 人</span>`:''}${selectedEntry.score!=null?`<span class="selection-score">${fmt(selectedEntry.score)} 分</span>`:''}${change?`<span class="selection-change ${change.improvement<0?'decline':''}">较上次${change.improvement>0?'前进 '+change.improvement+' 名':change.improvement<0?'后移 '+Math.abs(change.improvement)+' 名':'持平'}</span>`:''}`:'暂无考试记录';
+      const strip=document.getElementById('examStrip');
+      if(strip)strip.innerHTML=entries.map((entry,i)=>`<button type="button" class="exam-card" data-exam-index="${i}" aria-pressed="${i===selected}"><span class="exam-name">${escapeHtml(EXAM_SHORT[entry.label]||entry.label)}</span><strong>${entry.rank!=null?'第 '+fmt(entry.rank,0)+' 名':'名次未录入'}</strong><small>${entry.score!=null?fmt(entry.score)+' 分':'成绩未录入'}</small></button>`).join('');
+      if(strip){const active=strip.children[selected];if(active)strip.scrollLeft=Math.max(0,active.offsetLeft-strip.offsetLeft-(strip.clientWidth-active.offsetWidth)/2);}
       const rect = canvas.getBoundingClientRect();
-      const width = Math.max(320, rect.width || 800);
+      const width = Math.max(180, rect.width || 800);
       const height = Math.max(220, rect.height || 260);
       const ratio = Math.min(2, window.devicePixelRatio || 1);
       canvas.width = width * ratio;
@@ -1136,8 +1157,13 @@
       const ctx = canvas.getContext("2d");
       ctx.scale(ratio, ratio);
       ctx.clearRect(0, 0, width, height);
-      if (entries.length < 2) {
-        canvas.__chartState = { entries: [] };
+      const scale=model.rankScale(entries);
+      const pad={left:43,right:18,top:30,bottom:29};
+      const plotW=width-pad.left-pad.right,plotH=height-pad.top-pad.bottom;
+      const x=index=>entries.length===1?pad.left+plotW/2:pad.left+plotW*index/(entries.length-1);
+      const y=value=>pad.top+scale.yRatio(value)*plotH;
+      canvas.__chartState={entries,xValues:entries.map((_,i)=>x(i)),yValues:entries.map(e=>e.rank==null?null:y(e.rank)),subjectName,key,selected};
+      if (!scale) {
         canvas.style.visibility = "hidden";
         if (empty) empty.hidden = false;
         return;
@@ -1145,18 +1171,7 @@
       canvas.style.visibility = "visible";
       if (empty) empty.hidden = true;
 
-      const values = entries.map((entry) => entry.value);
-      const rawMin = Math.min(...values);
-      const rawMax = Math.max(...values);
-      const range = Math.max(10, rawMax - rawMin);
-      const min = Math.max(0, rawMin - range * .22);
-      const max = rawMax + range * .22;
-      const pad = { left: 42, right: 24, top: 26, bottom: 36 };
-      const plotW = width - pad.left - pad.right;
-      const plotH = height - pad.top - pad.bottom;
-      const x = (index) => pad.left + (plotW * index) / Math.max(1, entries.length - 1);
-      const y = (value) => pad.top + ((max - value) / (max - min)) * plotH;
-      canvas.__chartState = { entries, xValues: entries.map((entry, index) => x(index)), subjectName: key === "total" ? "总分" : (SUBJECTS.find((subject) => subject.key === key)?.name || key) };
+      canvas.setAttribute('aria-label',`${subjectName}年级名次变化，名次越小越靠上。${entries.map(e=>`${e.label}：${e.rank==null?'未录入':e.rank+'名'}`).join('；')}`);
 
       ctx.lineWidth = 1;
       ctx.strokeStyle = "rgba(31, 69, 78, .10)";
@@ -1165,7 +1180,7 @@
       ctx.textAlign = "right";
       for (let i = 0; i < 4; i += 1) {
         const py = pad.top + (plotH * i) / 3;
-        const label = max - ((max - min) * i) / 3;
+        const label = scale.min + ((scale.max - scale.min) * i) / 3;
         ctx.beginPath();
         ctx.moveTo(pad.left, py);
         ctx.lineTo(width - pad.right, py);
@@ -1173,21 +1188,13 @@
         ctx.fillText(label.toFixed(0), pad.left - 8, py + 3);
       }
 
-      const gradient = ctx.createLinearGradient(0, pad.top, 0, height - pad.bottom);
-      gradient.addColorStop(0, "rgba(47, 113, 104, .22)");
-      gradient.addColorStop(1, "rgba(47, 113, 104, 0)");
       ctx.beginPath();
-      ctx.moveTo(x(0), height - pad.bottom);
-      entries.forEach((entry, index) => ctx.lineTo(x(index), y(entry.value)));
-      ctx.lineTo(x(entries.length - 1), height - pad.bottom);
-      ctx.closePath();
-      ctx.fillStyle = gradient;
-      ctx.fill();
-
-      ctx.beginPath();
+      let connected=false,previousScope=null;
       entries.forEach((entry, index) => {
-        if (index === 0) ctx.moveTo(x(index), y(entry.value));
-        else ctx.lineTo(x(index), y(entry.value));
+        if(entry.rank==null){connected=false;previousScope=null;return;}
+        if(!connected||previousScope!==entry.scope)ctx.moveTo(x(index),y(entry.rank));
+        else ctx.lineTo(x(index),y(entry.rank));
+        connected=true;previousScope=entry.scope;
       });
       ctx.strokeStyle = "#2f7168";
       ctx.lineWidth = 3;
@@ -1197,10 +1204,13 @@
 
       entries.forEach((entry, index) => {
         const px = x(index);
-        const py = y(entry.value);
+        ctx.fillStyle='#8a978d';ctx.textAlign='center';ctx.font='10px sans-serif';
+        ctx.fillText(String(index+1),px,height-9);
+        if(entry.rank==null)return;
+        const py = y(entry.rank);
         ctx.beginPath();
-        ctx.arc(px, py, 5, 0, Math.PI * 2);
-        ctx.fillStyle = "#fffefa";
+        ctx.arc(px, py, index===selected?6:4, 0, Math.PI * 2);
+        ctx.fillStyle = index===selected?'#2f7168':"#fffefa";
         ctx.fill();
         ctx.strokeStyle = "#2f7168";
         ctx.lineWidth = 3;
@@ -1208,7 +1218,7 @@
         ctx.fillStyle = "#263f48";
         ctx.font = "600 11px -apple-system, BlinkMacSystemFont, 'Microsoft YaHei', sans-serif";
         ctx.textAlign = "center";
-        ctx.fillText(fmt(entry.value), px, Math.max(14, py - 12));
+        if(index===selected||entries.length<=5)ctx.fillText(fmt(entry.rank,0),px,Math.max(16,py-12));
       });
     }
   </script>

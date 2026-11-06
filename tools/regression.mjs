@@ -77,6 +77,7 @@ publisherSandbox.XLSX = createRequire(import.meta.url)("../vendor/xlsx.full.min.
 vm.createContext(publisherSandbox);
 const sharedSource = fs.readFileSync(new URL("../shared-crypto.js", import.meta.url), "utf8");
 const questionSource = fs.readFileSync(new URL("../question-data.js", import.meta.url), "utf8");
+const metricsSource = fs.readFileSync(new URL("../report-metrics.js", import.meta.url), "utf8");
 const publisherSource = fs.readFileSync(new URL("../publisher.js", import.meta.url), "utf8");
 vm.runInContext(sharedSource, publisherSandbox);
 vm.runInContext(questionSource, publisherSandbox);
@@ -232,6 +233,7 @@ function makeQueryHarness(version, bundle = release.bundle, options = {}) {
   vm.createContext(sandbox);
   vm.runInContext(sharedSource, sandbox);
   vm.runInContext(questionSource, sandbox);
+  vm.runInContext(metricsSource, sandbox);
   vm.runInContext(`${options.source || querySource}\n;globalThis.__query = {
     loadVersionInfo, loadDataBundle, loadStudent, createInsights, rankTimeline,
     get activeDataMeta() { return activeDataMeta; }
