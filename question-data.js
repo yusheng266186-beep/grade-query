@@ -179,31 +179,32 @@
         const points = data.questions;
         const rawScore = points.filter(p => p.score != null).reduce((sum, p) => sum + p.score, 0);
         const scored = points.filter(p => p.score != null).length;
-        const uncertain = points.some(p => p.maxScoreNote);
+        const uncertain = points.some(p => p.maxScoreNote || !(p.maxScore>0));
+        const unlabelled = points.some(p => /^原始第\d+列/.test(String(p.question)));
         const known=points.filter(p=>p.score!=null&&p.maxScore>0&&!p.maxScoreNote);
         const lossCount=known.filter(p=>p.score<p.maxScore).length;
         const fullCount=known.filter(p=>p.score===p.maxScore).length;
-        const pendingCount=points.filter(p=>p.score==null||p.maxScoreNote||!(p.maxScore>0)).length;
         sections.push(`<details class="question-subject" data-question-subject="${escape(subject.key)}"><summary class="question-subject-heading"><span class="question-subject-title"><b>${escape(subject.name)}</b><small>${points.length}题${scored<points.length?` · 已录入${scored}题`:''}</small></span><span class="question-subject-total"><strong>${fmt(rawScore)}</strong><small>原始分</small></span></summary>
           <div class="question-content">
-          ${uncertain ? '<p class="question-warning">部分题号或满分待核实，仅展示原始得分，暂不计算对应失分。</p>' : ''}
-          <div class="question-filters" role="group" aria-label="筛选小题"><button type="button" data-question-filter="all" aria-pressed="true">全部 ${points.length}</button>${lossCount?`<button type="button" data-question-filter="loss" aria-pressed="false">有失分 ${lossCount}</button>`:''}${fullCount?`<button type="button" data-question-filter="full" aria-pressed="false">满分 ${fullCount}</button>`:''}${pendingCount?`<button type="button" data-question-filter="pending" aria-pressed="false">待核对 ${pendingCount}</button>`:''}</div>
-          <p class="question-hint">点开单题查看知识点与得分详情</p>
+          ${uncertain ? `<p class="question-description">${unlabelled?'本学科按原表列序展示。题号、知识点与满分的对应尚未确认，因此只列原始得分。':'部分小题未提供明确满分，仅列原始得分，不计算对应失分。'}</p>` : ''}
+          ${lossCount||fullCount?`<div class="question-filters" role="group" aria-label="筛选小题"><button type="button" data-question-filter="all" aria-pressed="true">全部 ${points.length}</button>${lossCount?`<button type="button" data-question-filter="loss" aria-pressed="false">有失分 ${lossCount}</button>`:''}${fullCount?`<button type="button" data-question-filter="full" aria-pressed="false">满分 ${fullCount}</button>`:''}</div>`:''}
           <div class="question-cards">${points.map((p,index)=>{
             const known=p.maxScore>0&&!p.maxScoreNote;
             const state=p.score==null||!known?'pending':p.score===p.maxScore?'full':'loss';
             const rawLabel=String(p.question||'');
-            const label=/^原始第\d+列/.test(rawLabel)?`第${index+1}列`:rawLabel;
+            const sourceOrder=/^原始第\d+列/.test(rawLabel);
+            const label=sourceOrder?`原表第${index+1}列`:rawLabel;
+            const knowledge=sourceOrder?'列序记录':/待核对|待核实/.test(String(p.knowledge||''))?'原始记录':p.knowledge||'知识点未提供';
             const loss=known&&p.score!=null?p.maxScore-p.score:null;
-            const status=p.score==null?'未录入':!known?'待核对':loss===0?'满分':`失 ${fmt(loss)} 分`;
+            const status=p.score==null?'未录入':!known?'原始分':loss===0?'满分':`失 ${fmt(loss)} 分`;
             const rate=known&&p.score!=null?Math.max(0,Math.min(100,p.score/p.maxScore*100)):null;
-            return `<details class="question-card question-${state}" data-question-state="${state}"><summary><span class="question-card-top"><b>${escape(label)}</b><small>${status}</small></span><span class="question-score"><strong>${fmt(p.score)}</strong>${known?`<span>/ ${fmt(p.maxScore)}</span>`:'<span>原始分</span>'}</span>${rate!=null?`<span class="question-meter" aria-hidden="true"><i style="width:${rate}%"></i></span>`:''}</summary><div class="question-card-detail"><b>知识点</b><p>${escape(p.knowledge||'未标注')}</p>${p.maxScoreNote?`<p>${escape(p.maxScoreNote)}，满分待核实。</p>`:`<p>${known?'满分 '+fmt(p.maxScore)+' 分':'满分未录入'}${loss!=null?' · 失 '+fmt(loss)+' 分':''}</p>`}</div></details>`;
+            return `<article class="question-card question-${state}" data-question-state="${state}"><div class="question-label"><b>${escape(label)}</b><p>${escape(knowledge)}</p></div><div class="question-result"><span class="question-score"><strong>${fmt(p.score)}</strong>${known?`<span>/ ${fmt(p.maxScore)}</span>`:''}</span><small>${status}</small></div>${rate!=null?`<span class="question-meter" aria-hidden="true"><i style="width:${rate}%"></i></span>`:''}</article>`;
           }).join('')}</div></div></details>`);
       } else if (data?.weak?.length) {
         sections.push(...data.weak.slice(0, 2).map(p => `<div class="knowledge-item"><b>${escape(subject.name)}</b><span>${escape(p.knowledge)} · ${escape(p.question)}</span><small>失 ${fmt(p.loss)} 分</small></div>`));
       }
     }
-    return sections.length ? `<p class="question-note">按学科展开，再点单题查看详情。化学、生物为原始分，与上方赋分不同；0分保留，未录入单独标记。</p>${sections.join("")}` : '<p class="panel-subtitle">暂未匹配到小题知识点数据。</p>';
+    return sections.length ? `<p class="question-note">按学科展开查看题号、知识点与得分。化学、生物为原始分，与上方赋分不同。</p>${sections.join("")}` : '<p class="panel-subtitle">暂未匹配到小题知识点数据。</p>';
   }
   function bind(container) {
     if(!container||container.dataset.questionBound)return;
