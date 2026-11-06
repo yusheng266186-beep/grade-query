@@ -611,7 +611,8 @@
       if (!dataBundlePromise) {
         const task = Promise.all([
           loadVersionInfo(),
-          fetchTextWithTimeout(`data/grade-data.v2.json?v=${Date.now()}`),
+          // 历次考试及小题组成的加密包较大，慢网络需要更长的下载时间。
+          fetchTextWithTimeout(`data/grade-data.v2.json?v=${Date.now()}`, 60000),
         ]).then(async ([version, rawBundle]) => {
           if (!rawBundle) {
             if (version) {
