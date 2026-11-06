@@ -216,11 +216,15 @@ const html = fs.readFileSync(new URL("../index.html", import.meta.url), "utf8");
 const querySource = html.match(/<script>([\s\S]*?)<\/script>/)?.[1];
 assert.ok(querySource, "index.html 内联脚本应存在");
 
-function makeQueryHarness(version, bundle = release.bundle) {
+function makeQueryHarness(version, bundle = release.bundle, options = {}) {
   const queryDom = makeDom();
+  const requests = [];
   const fetchImpl = async (url) => {
     const path = String(url);
+    requests.push(path);
     if (path.includes("version.json")) return { ok: true, json: async () => version, text: async () => JSON.stringify(version) };
+    if (options.recordFiles && path in options.recordFiles) return { ok: true, text: async () => JSON.stringify(options.recordFiles[path]) };
+    if (options.rejectBundle && path.includes("grade-data.v2.json")) throw new Error("The full bundle must not be downloaded");
     if (path.includes("grade-data.v2.json")) return { ok: true, json: async () => bundle, text: async () => JSON.stringify(bundle) };
     return { ok: false, json: async () => null, text: async () => "" };
   };
@@ -228,11 +232,11 @@ function makeQueryHarness(version, bundle = release.bundle) {
   vm.createContext(sandbox);
   vm.runInContext(sharedSource, sandbox);
   vm.runInContext(questionSource, sandbox);
-  vm.runInContext(`${querySource}\n;globalThis.__query = {
+  vm.runInContext(`${options.source || querySource}\n;globalThis.__query = {
     loadVersionInfo, loadDataBundle, loadStudent, createInsights, rankTimeline,
     get activeDataMeta() { return activeDataMeta; }
   };`, sandbox);
-  return { query: sandbox.__query, dom: queryDom };
+  return { query: sandbox.__query, dom: queryDom, requests };
 }
 
 const goodVersion = structuredClone(release.version);
@@ -267,6 +271,25 @@ const fastAddress = await publisher.sha256Hex(`grade-query-v2|${studentASecret}`
 assert.ok(!(fastAddress in release.bundle.records), "v3 记录地址不得等于裸 SHA-256 快速哈希（防离线枚举）");
 const studentAKeyring = await publisher.deriveV3Keyring(studentASecret);
 assert.ok(studentAKeyring.fileId in release.bundle.records, "v3 慢哈希地址应能命中发布包记录");
+
+// Individual reports remain usable when the multi-megabyte aggregate is unavailable.
+const recordBasePath = "data/records/test-release/";
+const individualHashes = Object.fromEntries(await Promise.all(Object.entries(release.bundle.records).map(async ([id,record]) => [id,await publisher.sha256Hex(JSON.stringify(record))])));
+const individualVersion = {...release.version,recordBasePath,recordHashes:individualHashes};
+for (const source of [querySource,fs.readFileSync(new URL("../student-results/index.html",import.meta.url),"utf8").match(/<script>([\s\S]*?)<\/script>/)[1]]) {
+  const recordPath = `${recordBasePath}${studentAKeyring.fileId}.json`;
+  const recordFiles = {[recordPath]:structuredClone(release.bundle.records[studentAKeyring.fileId])};
+  const fast = makeQueryHarness(individualVersion,release.bundle,{recordFiles,rejectBundle:true,source});
+  assert.deepEqual(JSON.parse(JSON.stringify(await fast.query.loadStudent("学生甲（更正）","s24001"))),JSON.parse(JSON.stringify(decrypted)));
+  assert.ok(!fast.requests.some(p=>p.includes("grade-data.v2.json")));
+  assert.equal(await fast.query.loadStudent("学生甲（更正）","WRONG-CODE"),null);
+  recordFiles[recordPath].data += "CORRUPTED";
+  await assert.rejects(()=>fast.query.loadStudent("学生甲（更正）","S24001"),error=>error?.code==="DATA_UPDATING");
+  recordFiles[recordPath]=structuredClone(release.bundle.records[studentAKeyring.fileId]);
+  assert.equal((await fast.query.loadStudent("学生甲（更正）","S24001")).currentExamId,"2026-mid");
+  const invalid = makeQueryHarness({...individualVersion,recordBasePath:"../other/"},release.bundle,{source});
+  await assert.rejects(()=>invalid.query.loadStudent("学生甲（更正）","S24001"),error=>error?.code==="DATA_INVALID");
+}
 
 const wrongHarness = makeQueryHarness(structuredClone(release.version));
 await wrongHarness.query.loadVersionInfo();

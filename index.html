@@ -678,8 +678,31 @@
 
     async function loadStudent(name, id) {
       const secret = await buildStudentSecret(name, id);
-      const bundle = await loadDataBundle();
+      const version = await loadVersionInfo();
       const v3Keyring = await deriveV3Keyring(secret);
+      if (version?.recordBasePath || version?.recordHashes) {
+        const hashes = version.recordHashes;
+        if (!/^data\/records\/[A-Za-z0-9._-]+\/$/.test(version.recordBasePath || "") ||
+            !hashes || typeof hashes !== "object" || Array.isArray(hashes) ||
+            Object.keys(hashes).length !== version.recordCount) {
+          const invalid = new Error("成绩索引格式异常，请联系老师重新发布。");
+          invalid.code = "DATA_INVALID";
+          throw invalid;
+        }
+        const expectedHash = hashes[v3Keyring.fileId];
+        if (!expectedHash) return null;
+        const raw = await fetchTextWithTimeout(`${version.recordBasePath}${v3Keyring.fileId}.json`, 30000);
+        let record;
+        try { record = raw ? JSON.parse(raw) : null; } catch (_) { record = null; }
+        if (!record || record.v !== 3 || await sha256Hex(JSON.stringify(record)) !== expectedHash) {
+          versionInfoPromise = null;
+          const updating = new Error("个人成绩文件正在同步，请稍后重试。");
+          updating.code = "DATA_UPDATING";
+          throw updating;
+        }
+        return decryptV3Record(v3Keyring, record);
+      }
+      const bundle = await loadDataBundle();
       if (bundle) {
         const records = bundle.records || {};
         const v3Record = records[v3Keyring.fileId];
